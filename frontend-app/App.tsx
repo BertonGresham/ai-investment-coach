@@ -25,17 +25,25 @@ type TradeForm = {
   klineSummary: string;
 };
 
-const initialForm: TradeForm = {
-  symbol: "AAPL",
-  buyTime: "2025-07-25T10:15:00",
-  sellTime: "2025-07-25T14:40:00",
-  buyPrice: "218.5",
-  sellPrice: "213.2",
-  quantity: "10",
-  buyReason: "看到价格快速上涨，担心错过机会，所以买入",
-  sellReason: "下跌后害怕继续亏损，所以卖出",
-  klineSummary: "买入前连续3根阳线，买入后出现长上影线，随后回落",
-};
+function toLocalDateTimeInput(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function createInitialForm(): TradeForm {
+  const now = new Date();
+  return {
+    symbol: "AAPL",
+    buyTime: toLocalDateTimeInput(new Date(now.getTime() - 3 * 60 * 60 * 1000)),
+    sellTime: toLocalDateTimeInput(new Date(now.getTime() - 60 * 60 * 1000)),
+    buyPrice: "218.5",
+    sellPrice: "213.2",
+    quantity: "10",
+    buyReason: "看到价格快速上涨，担心错过机会，所以买入",
+    sellReason: "下跌后害怕继续亏损，所以卖出",
+    klineSummary: "买入前连续3根阳线，买入后出现长上影线，随后回落",
+  };
+}
 
 type TradeAnalysis = {
   trade_id: string;
@@ -136,7 +144,7 @@ function confidenceLabel(confidence: string) {
 }
 
 export default function App() {
-  const [form, setForm] = useState<TradeForm>(initialForm);
+  const [form, setForm] = useState<TradeForm>(createInitialForm);
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [analysis, setAnalysis] = useState<TradeAnalysis | null>(null);
@@ -152,6 +160,8 @@ export default function App() {
     const buyPrice = Number(form.buyPrice);
     const sellPrice = form.sellPrice.trim() ? Number(form.sellPrice) : null;
     const quantity = Number(form.quantity);
+    const buyTimestamp = Date.parse(form.buyTime);
+    const sellTimestamp = form.sellTime.trim() ? Date.parse(form.sellTime) : null;
     if (!form.buyReason.trim()) {
       setError("请填写买入理由，便于复盘决策过程。");
       return;
@@ -162,6 +172,18 @@ export default function App() {
     }
     if (sellPrice !== null && (!Number.isFinite(sellPrice) || sellPrice <= 0)) {
       setError("卖出价格必须是大于 0 的数字。");
+      return;
+    }
+    if (!Number.isFinite(buyTimestamp)) {
+      setError("请填写有效的买入时间。");
+      return;
+    }
+    if ((sellTimestamp === null) !== (sellPrice === null)) {
+      setError("卖出时间和卖出价格需要同时填写，或同时留空。");
+      return;
+    }
+    if (sellTimestamp !== null && (!Number.isFinite(sellTimestamp) || sellTimestamp < buyTimestamp)) {
+      setError("卖出时间不能早于买入时间。");
       return;
     }
 
@@ -181,8 +203,8 @@ export default function App() {
           trade_id: tradeId,
           stock: { symbol: form.symbol.trim() || "UNKNOWN", market: "US" },
           trade: {
-            buy_time: form.buyTime,
-            sell_time: form.sellTime || null,
+            buy_time: new Date(buyTimestamp).toISOString(),
+            sell_time: sellTimestamp === null ? null : new Date(sellTimestamp).toISOString(),
             buy_price: buyPrice,
             sell_price: sellPrice,
             quantity,
@@ -425,4 +447,3 @@ const styles = StyleSheet.create({
   profileTitle: { color: "#172b2a", fontSize: 14, fontWeight: "800" },
   profilePattern: { color: "#136f63", fontSize: 12, lineHeight: 18 },
 });
-
