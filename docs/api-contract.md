@@ -24,9 +24,12 @@ GET /health
 ```json
 {
   "status": "ok",
-  "service": "ai-service"
+  "service": "ai-service",
+  "analysis_mode": "mock"
 }
 ```
+
+`analysis_mode` 为 `mock` 或 `llm`，便于演示端明确标注当前结果来自后端规则 Mock 还是 LLM。
 
 Spring Boot后端使用：
 
@@ -171,6 +174,10 @@ Response 包含 short_term、medium_term、long_term 三个窗口的样本数、
 
 ai-service 使用 ChromaDB 持久化向量，Embeddings 由 OPENAI_EMBEDDING_MODEL 生成。团队原创知识卡位于 ai-service/knowledge/behavior_principles.jsonl。在 ai-service 目录执行 python scripts/ingest_knowledge.py 建库；向量目录 ai-service/.chroma 已加入忽略规则。导入书籍材料前应确认拥有使用权并保留准确来源信息。
 
+### 网页演示
+
+仓库根目录执行 `python -m http.server 5173 --directory web-demo`，打开 `http://localhost:5173`。网页无需 Node/npm 构建依赖；优先调用 AI 服务，服务不可用时显示明确标记的本地规则演示结果。AI 服务开发环境默认允许 `localhost:5173` 和 Expo Web 的 `localhost:8081`，可通过 `AI_SERVICE_CORS_ORIGINS` 调整。
+
 ## CSV解析
 
 ### Request
@@ -237,4 +244,3 @@ POST /api/trades
   "reason_text": "看到价格快速上涨，担心错过机会"
 }
 ```
-
