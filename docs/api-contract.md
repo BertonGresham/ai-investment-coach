@@ -88,22 +88,24 @@ Content-Type: application/json
 ```json
 {
   "trade_id": "trade_20250725_001",
+  "trade_time": "2025-07-25T10:15:00",
   "analysis_type": "single_trade_behavior_analysis",
   "behavior_summary": "用户本次交易表现出追涨买入和亏损后恐慌卖出的倾向。",
   "detected_behavior_problems": [
     {
       "problem_code": "FOMO_BUYING",
-      "problem_name": "害怕错过而追涨买入",
-      "severity": "high",
-      "evidence": "买入理由包含担心错过，且买入前价格已快速拉升。",
-      "explanation": "用户可能被短期上涨刺激，缺少等待确认和风险预案。"
+      "problem_name": "害怕错过的情绪可能影响买入",
+      "severity": "medium",
+      "evidence": "买入理由中提到担心错过机会。",
+      "explanation": "单笔记录不足以确认是否形成稳定的追涨模式。",
+      "theory_reference": null
     }
   ],
   "personality_tags": [
     {
-      "tag_code": "MOMENTUM_CHASER",
-      "tag_name": "短线追涨型",
-      "confidence": 0.82
+      "tag_code": "FOMO_SENSITIVE",
+      "tag_name": "容易受错失焦虑影响",
+      "confidence": 0.62
     }
   ],
   "coaching_advice": [
@@ -114,11 +116,60 @@ Content-Type: application/json
   ],
   "risk_notice": "以上内容仅用于投资行为复盘和教育，不构成任何投资建议。",
   "uncertainty": {
-    "level": "medium",
-    "reason": "当前只分析了一笔交易，需要结合多笔交易记录判断长期模式。"
+    "level": "high",
+    "reason": "当前仅有一笔交易记录；行为标签是待验证的线索，不代表长期投资性格。"
   }
 }
 ```
+
+### 累积投资行为画像
+
+POST /analyze-profile 接收由 /analyze-trade 返回的分析结果列表。画像时间窗为近 7、30、90 天，按最新一笔交易时间计算；as_of 可指定统计基准时间。少于 3 笔样本时，置信级别为 low。
+
+~~~json
+{
+  "user_id": "user_001",
+  "trade_analyses": [
+    {
+      "trade_id": "trade_20250725_001",
+      "trade_time": "2025-07-25T10:15:00",
+      "analysis_type": "single_trade_behavior_analysis",
+      "behavior_summary": "本次记录可能体现出错失焦虑。",
+      "detected_behavior_problems": [
+        {
+          "problem_code": "FOMO_BUYING",
+          "problem_name": "买入理由可能受到害怕错过的情绪影响",
+          "severity": "medium",
+          "evidence": "买入理由中提到担心错过机会。",
+          "explanation": "需要结合事前计划和更多交易判断是否重复出现。",
+          "theory_reference": null
+        }
+      ],
+      "personality_tags": [
+        {
+          "tag_code": "FOMO_SENSITIVE",
+          "tag_name": "容易受错失焦虑影响",
+          "confidence": 0.62
+        }
+      ],
+      "coaching_advice": ["下次交易前写下入场条件和退出条件。"],
+      "reflection_questions": ["这次买入是否符合事前计划？"],
+      "risk_notice": "以上内容仅用于投资行为复盘和教育，不构成任何投资建议。",
+      "uncertainty": {
+        "level": "high",
+        "reason": "仅有一笔交易样本。"
+      }
+    }
+  ],
+  "as_of": null
+}
+~~~
+
+Response 包含 short_term、medium_term、long_term 三个窗口的样本数、置信级别、重复标签和摘要。画像只汇总行为线索，不构成心理诊断。
+
+### RAG知识库导入
+
+ai-service 使用 ChromaDB 持久化向量，Embeddings 由 OPENAI_EMBEDDING_MODEL 生成。团队原创知识卡位于 ai-service/knowledge/behavior_principles.jsonl。在 ai-service 目录执行 python scripts/ingest_knowledge.py 建库；向量目录 ai-service/.chroma 已加入忽略规则。导入书籍材料前应确认拥有使用权并保留准确来源信息。
 
 ## CSV解析
 
