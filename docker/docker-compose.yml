@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ai-coach-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: ai_investment_coach
+      MYSQL_USER: coach
+      MYSQL_PASSWORD: coach_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    container_name: ai-coach-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:
+
