@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import ValidationError
@@ -33,11 +34,26 @@ app = FastAPI(
     description="Analyze investor decision behavior, not stock price direction.",
     version="0.2.0",
 )
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "AI_SERVICE_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "ai-service"}
+    mode = "mock" if os.getenv("USE_MOCK_LLM", "true").lower() == "true" else "llm"
+    return {"status": "ok", "service": "ai-service", "analysis_mode": mode}
 
 
 @app.post("/analyze-trade", response_model=TradeAnalysisResponse)
@@ -128,6 +144,7 @@ def llm_behavior_analysis(
         raw_result["trade_id"] = req.trade_id
         raw_result["trade_time"] = req.trade.buy_time
         raw_result["analysis_type"] = "single_trade_behavior_analysis"
+        _keep_supported_theory_references(raw_result, [*req.rag_context, *retrieved])
         return TradeAnalysisResponse.model_validate(raw_result)
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         logger.exception("The model returned an invalid analysis payload.")
@@ -284,6 +301,18 @@ def _theory_reference(notes: list[RagEvidence], keyword: str) -> str | None:
     return None
 
 
+def _keep_supported_theory_references(
+    result: dict[str, Any], notes: list[RagEvidence]
+) -> None:
+    allowed = {f"{item.title}（{item.source}）" for item in notes}
+    problems = result.get("detected_behavior_problems")
+    if not isinstance(problems, list):
+        return
+    for problem in problems:
+        if isinstance(problem, dict) and problem.get("theory_reference") not in allowed:
+            problem["theory_reference"] = None
+
+
 def _aggregate_window(
     period: str,
     days: int,
@@ -368,4 +397,3 @@ def _normalize_datetime(value: datetime) -> datetime:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
-
