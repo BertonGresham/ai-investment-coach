@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """
 - 盈亏结果不能单独证明决策好坏；重点看用户是否按事前计划行动。
 - 若证据不足，降低严重程度和置信度，并明确说明缺少什么信息。
 - RAG材料只用于解释行为概念。优先引用材料的标题和来源，不要编造书籍观点或引用原文。
-- 输出简体中文合法JSON，不要输出Markdown或JSON以外的文字。
+- 按 analysis_context.language 输出简体中文（zh-CN）或韩文（ko-KR）的合法JSON，不要输出Markdown或JSON以外的文字。
 
 返回对象必须包含：
 trade_id, trade_time, analysis_type, behavior_summary,
@@ -48,7 +48,7 @@ def build_analysis_payload(
 
 def build_user_prompt(payload: dict[str, Any]) -> str:
     return (
-        "根据以下交易行为数据生成结构化复盘。信息不足时请保守判断。"
+        "根据以下交易行为数据生成结构化复盘。信息不足时请保守判断，并严格使用数据中指定的输出语言。"
         "请严格遵守系统消息中的字段要求。\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )

@@ -2,16 +2,20 @@ from datetime import datetime, timezone
 import unittest
 
 from pydantic import ValidationError
+from fastapi import HTTPException
 
 from app.main import (
     _keep_supported_theory_references,
     analyze_profile,
     mock_behavior_analysis,
+    mock_screenshot_recognition,
+    validate_screenshot_image,
 )
 from app.prompts import build_analysis_payload
 from app.schemas import (
     ProfileRequest,
     RagEvidence,
+    ScreenshotRecognitionResponse,
     Trade,
     TradeAnalysisRequest,
     TradeAnalysisResponse,
@@ -157,6 +161,59 @@ class BehaviorAnalysisTests(unittest.TestCase):
             "先定义交易计划（团队知识卡）",
         )
 
+    def test_mock_screenshot_recognition_does_not_claim_ocr(self) -> None:
+        result = mock_screenshot_recognition("ko-KR")
+
+        self.assertEqual(result.status, "mock")
+        self.assertIsNone(result.fields.symbol)
+        self.assertIn("Mock", result.warnings[0])
+
+    def test_screenshot_confidence_must_be_between_zero_and_one(self) -> None:
+        with self.assertRaises(ValidationError):
+            ScreenshotRecognitionResponse(
+                status="recognized",
+                fields={"symbol": "AAPL"},
+                field_confidence={"symbol": 1.2},
+                notice="Review extracted values.",
+            )
+
+    def test_profile_localizes_korean_summaries(self) -> None:
+        request = ProfileRequest(
+            user_id="user-1",
+            language="ko-KR",
+            trade_analyses=[trade_analysis("t1", "2025-07-24T10:00:00Z")],
+        )
+
+        result = analyze_profile(request)
+
+        self.assertIn("최근", result.short_term.summary)
+        self.assertIn("프로필은", result.limitation)
+
+    def test_mock_analysis_localizes_korean_behavior_labels(self) -> None:
+        request = TradeAnalysisRequest(
+            user_id="user-1",
+            trade_id="trade-ko",
+            stock={"symbol": "005930", "market": "KR"},
+            trade={"buy_time": "2025-07-25T10:00:00", "buy_price": 70000, "quantity": 1},
+            decision={"buy_reason": "기회를 놓칠까 걱정되어 추격 매수"},
+            analysis_context={"language": "ko-KR"},
+        )
+
+        result = mock_behavior_analysis(request)
+
+        self.assertIn("이번 기록", result.behavior_summary)
+        self.assertEqual(result.personality_tags[0].tag_name, "기회 상실 불안에 민감함")
+
+    def test_screenshot_validation_checks_signature_and_size(self) -> None:
+        validate_screenshot_image("image/png", b"\x89PNG\r\n\x1a\nimage-data")
+        with self.assertRaises(HTTPException) as wrong_type:
+            validate_screenshot_image("image/png", b"not-an-image")
+        self.assertEqual(wrong_type.exception.status_code, 415)
+        with self.assertRaises(HTTPException) as too_large:
+            validate_screenshot_image("image/png", b"\x89PNG\r\n\x1a\n" + b"0" * (8 * 1024 * 1024))
+        self.assertEqual(too_large.exception.status_code, 413)
+
 
 if __name__ == "__main__":
     unittest.main()
+

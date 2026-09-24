@@ -141,6 +141,7 @@ class TradeAnalysisResponse(StrictModel):
 
 class ProfileRequest(StrictModel):
     user_id: str = Field(min_length=1, max_length=100)
+    language: Literal["zh-CN", "ko-KR"] = "zh-CN"
     trade_analyses: list[TradeAnalysisResponse] = Field(min_length=1, max_length=500)
     as_of: datetime | None = None
 
@@ -181,6 +182,45 @@ class InvestmentProfileResponse(StrictModel):
     limitation: str
 
 
+class ScreenshotTradeFields(StrictModel):
+    symbol: str | None = Field(default=None, max_length=24)
+    market: Literal["US", "KR", "CN", "OTHER"] | None = None
+    buy_time: str | None = Field(default=None, max_length=40)
+    sell_time: str | None = Field(default=None, max_length=40)
+    buy_price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    sell_price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    quantity: int | None = Field(default=None, gt=0, le=100_000_000)
+    buy_reason: str | None = Field(default=None, max_length=1_000)
+    sell_reason: str | None = Field(default=None, max_length=1_000)
+
+    @field_validator("buy_time", "sell_time")
+    @classmethod
+    def validate_optional_time(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.replace("Z", "+00:00")
+        try:
+            datetime.fromisoformat(normalized)
+        except ValueError:
+            date.fromisoformat(value)
+        return value
+
+
+class ScreenshotRecognitionResponse(StrictModel):
+    status: Literal["recognized", "needs_review", "mock"]
+    fields: ScreenshotTradeFields
+    field_confidence: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list, max_length=20)
+    notice: str
+
+    @field_validator("field_confidence")
+    @classmethod
+    def validate_confidence(cls, value: dict[str, float]) -> dict[str, float]:
+        if any(not 0 <= score <= 1 for score in value.values()):
+            raise ValueError("field confidence values must be between 0 and 1.")
+        return value
+
+
 def _parse_iso_time(value: str) -> datetime:
     normalized = value.replace("Z", "+00:00")
     try:
@@ -190,3 +230,4 @@ def _parse_iso_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+

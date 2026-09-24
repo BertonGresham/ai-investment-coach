@@ -22,6 +22,7 @@
         --red-pale: #fff0ee;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 14px; }
       button, input, select, textarea { font: inherit; }
       button { cursor: pointer; }
@@ -31,6 +32,7 @@
       .brand-name { font-size: 14px; font-weight: 800; letter-spacing: 0; }
       .brand-caption { color: var(--muted); font-size: 11px; margin-top: 2px; }
       .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+      .language-toggle { min-width: 58px; padding: 0 9px; }
       .connection { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
       .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #a4b2ae; }
       .connection[data-state="online"] .connection-dot { background: #23836f; }
@@ -50,6 +52,15 @@
       h2 { margin: 0; font-size: 15px; font-weight: 800; }
       .section-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
       .form-body { padding: 16px 18px 18px; }
+      .upload-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+      .upload-row .button { display: inline-flex; align-items: center; }
+      .upload-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+      .upload-preview { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; }
+      .upload-preview img { width: 92px; height: 92px; object-fit: cover; border: 1px solid var(--line); border-radius: 5px; }
+      .upload-meta { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+      .ocr-status { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
+      .ocr-status[data-state="error"] { color: var(--red); }
+      .ocr-status[data-state="success"] { color: var(--teal-dark); }
       .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 11px; }
       .field { min-width: 0; display: grid; gap: 6px; }
       .field.wide { grid-column: 1 / -1; }
@@ -124,7 +135,9 @@
         .top-actions { flex: 1; }
         .connection { font-size: 0; }
         .connection-dot { width: 9px; height: 9px; }
-        .api-field { width: min(190px, 48vw); }
+        .top-actions { gap: 7px; }
+        .api-field { width: min(150px, 39vw); }
+        .language-toggle { min-width: 52px; padding: 0 7px; }
         .layout { padding: 17px 12px 28px; }
         .page-head { align-items: flex-start; flex-direction: column; gap: 7px; }
         h1 { font-size: 22px; }
@@ -144,6 +157,7 @@
       <div class="top-actions">
         <div id="connection" class="connection" data-state="checking"><span class="connection-dot"></span><span id="connectionText">检查服务中</span></div>
         <input id="apiUrl" class="api-field" aria-label="AI 服务地址" placeholder="AI 服务地址" />
+        <button id="languageToggle" class="button language-toggle" type="button" aria-label="한국어로 보기">한국어</button>
       </div>
     </header>
 
@@ -156,7 +170,7 @@
         </div>
       </div>
 
-      <nav class="nav-tabs" role="tablist" aria-label="复盘页面">
+      <nav id="reviewTabs" class="nav-tabs" role="tablist" aria-label="复盘页面">
         <button class="tab" role="tab" aria-selected="true" data-tab="trade">单笔复盘</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="profile">行为画像 <span id="historyCount">0</span></button>
       </nav>
@@ -167,7 +181,22 @@
             <div><h2 id="tradeHeading">交易记录</h2><p class="section-subtitle">记录当时的理由与市场背景，盈亏本身不代表决策质量。</p></div>
           </div>
           <form id="tradeForm" class="form-body">
+            <div class="field wide upload-field">
+              <label id="screenshotFieldLabel" for="screenshotFile" data-i18n="screenshotLabel">券商交易截图</label>
+              <div class="upload-row">
+                <input id="screenshotFile" class="upload-input" type="file" accept="image/png,image/jpeg,image/webp" />
+                <label id="chooseScreenshot" class="button" for="screenshotFile">选择图片</label>
+                <button id="recognizeScreenshot" class="button" type="button" disabled>识别并填入</button>
+                <span class="field-hint" data-i18n="uploadHint">PNG、JPG 或 WebP，最大 8 MB。识别后请先核对。</span>
+              </div>
+              <div id="uploadPreview" class="upload-preview" hidden>
+                <img id="screenshotPreview" alt="" />
+                <div id="uploadMeta" class="upload-meta"></div>
+              </div>
+              <p id="ocrStatus" class="ocr-status" role="status" aria-live="polite" hidden></p>
+            </div>
             <div class="form-grid">
+              <div class="field"><label for="market">市场</label><select id="market" name="market"><option value="US">美国</option><option value="KR">韩国</option><option value="CN">中国</option><option value="OTHER">其他</option></select></div>
               <div class="field"><label for="symbol">股票代码</label><input id="symbol" name="symbol" value="AAPL" maxlength="24" /></div>
               <div class="field"><label for="quantity">股数</label><input id="quantity" name="quantity" type="number" min="1" step="1" value="10" required /></div>
               <div class="field"><label for="buyTime">买入时间</label><input id="buyTime" name="buyTime" type="datetime-local" required /></div>
@@ -204,14 +233,119 @@
 
     <script>
       const byId = (id) => document.getElementById(id);
+      const translations = {
+        "zh-CN": {
+          languageButton: "한국어", languageAria: "切换到韩语", title: "AI 投资教练 | 交易复盘",
+          brand: "AI 投资教练", brandCaption: "投资决策行为复盘", checking: "检查服务中", connectedMock: "服务已连接 · Mock", connectedLlm: "服务已连接 · LLM", connected: "AI 服务已连接", offline: "本地演示模式",
+          apiLabel: "AI 服务地址", apiPlaceholder: "AI 服务地址", eyebrow: "AI INVESTMENT COACH / 复盘工作台", pageTitle: "看清决策，不预测涨跌", pageSubtitle: "把一笔交易拆解成可观察的行为线索，再从重复记录中认识自己的决策习惯。",
+          tradeTab: "单笔复盘", profileTab: "行为画像", tradeHeading: "交易记录", tradeSubtitle: "记录当时的理由与市场背景，盈亏本身不代表决策质量。", resultHeading: "行为复盘", resultSubtitle: "证据、解释与不确定性分开呈现。",
+          screenshotLabel: "券商交易截图", chooseScreenshot: "选择图片", recognizeScreenshot: "识别并填入", uploadHint: "PNG、JPG 或 WebP，最大 8 MB。图片会发送到当前配置的视觉模型识别；本演示不会保存上传文件。", uploadNoFile: "尚未选择图片。", removeImage: "移除图片", recognizing: "正在识别截图…", noOcrService: "无法连接 AI 服务。请启动后端视觉识别 API。", mockOcr: "当前后端处于 Mock 模式，没有执行真实图片识别。配置视觉模型后即可识别。", ocrFilled: "识别结果已填入表单，请核对高亮/置信度较低的字段，并补充买卖理由后再分析。", ocrFailed: "截图识别失败。请检查服务连接，或手动填写交易信息。", fileTooLarge: "图片超过 8 MB，请选择较小的图片。", invalidImage: "请选择 PNG、JPG 或 WebP 图片。", confidence: "字段置信度", noFields: "未识别出可用交易字段。请手动填写。", market: "市场", markets: ["美国", "韩国", "中国", "其他"], labels: { market: "市场", symbol: "股票代码", quantity: "股数", buyTime: "买入时间", sellTime: "卖出时间", buyPrice: "买入价格", sellPrice: "卖出价格", buyReasonType: "买入理由类型", sellReason: "卖出理由", buyReason: "买入理由", klineSummary: "K 线摘要" },
+          reasonTypes: ["害怕错过 / 追涨", "按计划执行", "技术信号", "消息影响", "其他"], klineHint: "只作为当时决策背景，不用于推测股票未来走势。", analyze: "分析这笔交易", analyzing: "分析中…", sample: "载入演示案例", pnlPrefix: "未计手续费盈亏", pnlPercentSuffix: "%", waitingTitle: "等待一笔交易记录", waitingCopy: "提交后查看行为问题、行为标签、复盘建议和判断边界。演示数据只保存在当前页面内存中。",
+          emptyProfile: "完成至少一笔交易复盘后，这里会显示近 7 天、30 天和 90 天的观察结果。", profileToolbar: "按买入时间统计近期重复出现的行为线索。", refreshProfile: "更新行为画像", privacy: "仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。", formMissingReason: "请填写买入理由。", formBuyTime: "请填写有效的买入时间。", formBuyPrice: "买入价格必须大于 0。", formQuantity: "股数必须是正整数。", formSellPair: "卖出时间和卖出价格需要同时填写，或同时留空。", formSellTime: "卖出时间不能早于买入时间。", formSellPrice: "卖出价格必须大于 0。", apiError: "AI 服务返回错误：", analyzeFailed: "分析失败，请检查输入。", profileNeeded: "先完成一笔交易复盘，再生成行为画像。", profileFailed: "画像生成失败。",
+          resultTitle: "行为复盘结果", resultLanguageMismatch: "已有分析正文仍为韩语；点击“分析这笔交易”可按当前语言重新生成。", evidence: "观察到的线索", tags: "本次行为标签", noTags: "暂未形成明确标签。", advice: "复盘建议", questions: "复盘问题", uncertainty: "判断边界", fewSamples: "样本较少", someSamples: "样本一般", manySamples: "样本较多", severity: { high: "较明显", medium: "留意", low: "线索" }, basis: "依据：", theory: "理论参考：", confidenceSuffix: "% 线索强度", profileDays: " 天观察", countUnit: " 笔 · ", confidenceLevels: { low: "样本较少", medium: "样本一般", high: "样本较多" }, patterns: "常见行为标签", recurring: "重复出现的问题", sampleUnit: " 笔", recentNoSamples: "最近{days}天没有可用交易样本。", fewProfile: "最近{days}天有{count}笔样本，样本较少，暂不判断稳定行为模式。", profileHasTags: "最近{days}天有{count}笔样本；较常出现的标签是{tags}。", profileNoTags: "最近{days}天有{count}笔样本，暂未出现重复的行为标签。", localData: "本地演示数据", aiProfile: "AI 服务画像", profileAsOf: "统计截至", profileLimit: "样本较少时，标签只代表待观察的倾向，不是心理诊断。", ocrReasonNotGuessed: "买卖理由不会由盈亏或图表推测。",
+        },
+        "ko-KR": {
+          languageButton: "中文", languageAria: "중국어로 전환", title: "AI 투자 코치 | 거래 복기",
+          brand: "AI 투자 코치", brandCaption: "투자 의사결정 행동 복기", checking: "서비스 확인 중", connectedMock: "서비스 연결됨 · Mock", connectedLlm: "서비스 연결됨 · LLM", connected: "AI 서비스 연결됨", offline: "로컬 데모 모드",
+          apiLabel: "AI 서비스 주소", apiPlaceholder: "AI 서비스 주소", eyebrow: "AI INVESTMENT COACH / 거래 복기", pageTitle: "결정을 살펴보고, 주가를 예측하지 않습니다", pageSubtitle: "한 번의 거래에서 행동 단서를 살펴보고, 반복 기록을 통해 의사결정 습관을 알아봅니다.",
+          tradeTab: "거래 복기", profileTab: "행동 프로필", tradeHeading: "거래 기록", tradeSubtitle: "당시의 이유와 시장 배경을 기록하세요. 손익만으로 의사결정의 질을 판단할 수는 없습니다.", resultHeading: "행동 복기", resultSubtitle: "근거, 해석, 불확실성을 나누어 보여줍니다.",
+          screenshotLabel: "증권사 거래 스크린샷", chooseScreenshot: "이미지 선택", recognizeScreenshot: "인식 후 입력", uploadHint: "PNG, JPG, WebP, 최대 8MB. 이미지는 설정된 비전 모델로 전송되며 이 데모는 업로드 파일을 저장하지 않습니다.", uploadNoFile: "선택된 이미지가 없습니다.", removeImage: "이미지 제거", recognizing: "스크린샷을 인식하는 중…", noOcrService: "AI 서비스에 연결할 수 없습니다. 백엔드 비전 인식 API를 시작하세요.", mockOcr: "백엔드가 Mock 모드라 실제 이미지 인식은 수행되지 않았습니다. 비전 모델을 설정하면 인식할 수 있습니다.", ocrFilled: "인식 결과를 입력란에 채웠습니다. 신뢰도가 낮은 항목을 확인하고 매매 이유를 보완한 뒤 분석하세요.", ocrFailed: "스크린샷 인식에 실패했습니다. 서비스를 확인하거나 거래 정보를 직접 입력하세요.", fileTooLarge: "이미지가 8MB를 초과합니다. 더 작은 이미지를 선택하세요.", invalidImage: "PNG, JPG 또는 WebP 이미지를 선택하세요.", confidence: "항목 신뢰도", noFields: "거래 정보를 인식하지 못했습니다. 직접 입력해 주세요.", market: "시장", markets: ["미국", "한국", "중국", "기타"], labels: { market: "시장", symbol: "종목 코드", quantity: "수량", buyTime: "매수 시간", sellTime: "매도 시간", buyPrice: "매수 가격", sellPrice: "매도 가격", buyReasonType: "매수 이유 유형", sellReason: "매도 이유", buyReason: "매수 이유", klineSummary: "캔들 차트 요약" },
+          reasonTypes: ["놓칠까 봐 매수 / 추격 매수", "계획에 따른 실행", "기술적 신호", "뉴스 영향", "기타"], klineHint: "당시 의사결정의 배경으로만 사용하며 주가의 미래를 예측하지 않습니다.", analyze: "이 거래 분석", analyzing: "분석 중…", sample: "데모 사례 불러오기", pnlPrefix: "수수료 제외 손익", pnlPercentSuffix: "%", waitingTitle: "거래 기록을 기다리는 중", waitingCopy: "제출하면 행동 단서, 태그, 복기 제안과 판단의 한계를 확인할 수 있습니다. 데모 데이터는 현재 페이지 메모리에만 저장됩니다.",
+          emptyProfile: "거래 복기를 한 건 이상 완료하면 최근 7일, 30일, 90일 관찰 결과가 표시됩니다.", profileToolbar: "매수 시간을 기준으로 최근 반복되는 행동 단서를 집계합니다.", refreshProfile: "행동 프로필 업데이트", privacy: "투자 행동 교육과 복기용이며 투자 조언이 아닙니다. 단일 거래로 지속적인 성향을 단정할 수 없습니다.", formMissingReason: "매수 이유를 입력하세요.", formBuyTime: "유효한 매수 시간을 입력하세요.", formBuyPrice: "매수 가격은 0보다 커야 합니다.", formQuantity: "수량은 양의 정수여야 합니다.", formSellPair: "매도 시간과 가격을 함께 입력하거나 둘 다 비워 두세요.", formSellTime: "매도 시간은 매수 시간보다 빠를 수 없습니다.", formSellPrice: "매도 가격은 0보다 커야 합니다.", apiError: "AI 서비스 오류: ", analyzeFailed: "분석에 실패했습니다. 입력 내용을 확인하세요.", profileNeeded: "먼저 거래 복기를 완료한 뒤 프로필을 생성하세요.", profileFailed: "프로필을 생성하지 못했습니다.",
+          resultTitle: "행동 복기 결과", resultLanguageMismatch: "이전 분석 본문은 중국어로 생성되었습니다. 현재 언어로 다시 보려면 ‘이 거래 분석’을 누르세요.", evidence: "관찰된 단서", tags: "이번 거래 행동 태그", noTags: "명확한 태그가 아직 없습니다.", advice: "복기 제안", questions: "복기 질문", uncertainty: "판단의 한계", fewSamples: "표본 적음", someSamples: "표본 보통", manySamples: "표본 충분", severity: { high: "뚜렷함", medium: "주의", low: "단서" }, basis: "근거: ", theory: "이론 참고: ", confidenceSuffix: "% 단서 강도", profileDays: "일 관찰", countUnit: "건 · ", confidenceLevels: { low: "표본 적음", medium: "표본 보통", high: "표본 충분" }, patterns: "자주 나타난 행동 태그", recurring: "반복된 문제", sampleUnit: "건", recentNoSamples: "최근 {days}일간 분석 가능한 거래 표본이 없습니다.", fewProfile: "최근 {days}일간 표본 {count}건이 있습니다. 표본이 적어 안정적인 행동 패턴을 판단하지 않습니다.", profileHasTags: "최근 {days}일간 표본 {count}건이며, 자주 나타난 태그는 {tags}입니다.", profileNoTags: "최근 {days}일간 표본 {count}건이며, 반복되는 행동 태그는 아직 없습니다.", localData: "로컬 데모 데이터", aiProfile: "AI 서비스 프로필", profileAsOf: "집계 기준일", profileLimit: "표본이 적으면 태그는 관찰할 경향일 뿐이며 심리 진단이 아닙니다.", ocrReasonNotGuessed: "손익이나 차트로 매매 이유를 추측하지 않습니다.",
+        },
+      };
+      let language = localStorage.getItem("aiCoachLanguage") === "ko-KR" ? "ko-KR" : "zh-CN";
+      const tr = (key) => translations[language][key];
       const apiInput = byId("apiUrl");
       const savedApiUrl = new URLSearchParams(location.search).get("api") || localStorage.getItem("aiCoachApiUrl");
       apiInput.value = savedApiUrl || `${location.protocol}//${location.hostname || "localhost"}:8001`;
       const history = [];
       let currentAnalysis = null;
+      let currentAnalysisMode = "local";
+      let currentAnalysisInput = null;
+      let currentAnalysisLanguage = language;
       let lastProfile = null;
       let lastProfileSource = "local";
       let serviceAnalysisMode = "unknown";
+      let demoSampleActive = false;
+
+      function applyLanguage() {
+        const copy = translations[language];
+        document.documentElement.lang = language;
+        document.title = copy.title;
+        document.querySelector(".brand-name").textContent = copy.brand;
+        document.querySelector(".brand-caption").textContent = copy.brandCaption;
+        document.querySelector(".eyebrow").textContent = copy.eyebrow;
+        document.querySelector("h1").textContent = copy.pageTitle;
+        document.querySelector(".page-head .subtitle").textContent = copy.pageSubtitle;
+        byId("reviewTabs").setAttribute("aria-label", language === "ko-KR" ? "복기 화면" : "复盘页面");
+        document.querySelector('[data-tab="trade"]').textContent = copy.tradeTab;
+        document.querySelector('[data-tab="profile"]').innerHTML = `${copy.profileTab} <span id="historyCount">${history.length}</span>`;
+        byId("tradeHeading").textContent = copy.tradeHeading;
+        byId("tradeHeading").nextElementSibling.textContent = copy.tradeSubtitle;
+        byId("resultHeading").textContent = copy.resultHeading;
+        byId("resultHeading").nextElementSibling.textContent = copy.resultSubtitle;
+        byId("screenshotFieldLabel").textContent = copy.screenshotLabel;
+        byId("chooseScreenshot").textContent = copy.chooseScreenshot;
+        byId("recognizeScreenshot").textContent = copy.recognizeScreenshot;
+        if (byId("uploadMeta").querySelector("button")) byId("uploadMeta").querySelector("button").textContent = copy.removeImage;
+        document.querySelector('[data-i18n="uploadHint"]').textContent = copy.uploadHint;
+        Object.entries(copy.labels).forEach(([id, value]) => {
+          const label = document.querySelector(`label[for="${id}"]`);
+          if (label) label.textContent = value;
+        });
+        [...byId("market").options].forEach((option, index) => { option.textContent = copy.markets[index]; });
+        [...byId("buyReasonType").options].forEach((option, index) => { option.textContent = copy.reasonTypes[index]; });
+        byId("klineSummary").parentElement.querySelector(".field-hint").textContent = copy.klineHint;
+        byId("analyzeButton").textContent = copy.analyze;
+        byId("sampleButton").textContent = copy.sample;
+        byId("refreshProfile").textContent = copy.refreshProfile;
+        document.querySelector(".profile-toolbar p").textContent = copy.profileToolbar;
+        document.querySelector(".privacy-line").textContent = copy.privacy;
+        byId("apiUrl").setAttribute("aria-label", copy.apiLabel);
+        byId("apiUrl").placeholder = copy.apiPlaceholder;
+        byId("languageToggle").textContent = copy.languageButton;
+        byId("languageToggle").setAttribute("aria-label", copy.languageAria);
+        if (byId("connection").dataset.state === "offline") byId("connectionText").textContent = copy.offline;
+        else if (byId("connection").dataset.state === "checking") byId("connectionText").textContent = copy.checking;
+        else byId("connectionText").textContent = serviceAnalysisMode === "mock" ? copy.connectedMock : serviceAnalysisMode === "llm" ? copy.connectedLlm : copy.connected;
+        if (byId("resultBody").querySelector(".empty-state")) renderEmptyState();
+        if (currentAnalysis) renderAnalysis(currentAnalysis, currentAnalysisMode);
+        if (lastProfile) renderProfile(lastProfile, lastProfileSource);
+        else if (byId("profileBody").classList.contains("profile-empty")) byId("profileBody").textContent = copy.emptyProfile;
+        updatePnl();
+      }
+
+      byId("languageToggle").addEventListener("click", () => {
+        const previousSample = demoSampleActive ? sampleCopy(language) : null;
+        language = language === "zh-CN" ? "ko-KR" : "zh-CN";
+        const nextSample = sampleCopy(language);
+        if (previousSample) ["buyReason", "sellReason", "klineSummary"].forEach((id) => {
+          if (byId(id).value === previousSample[id]) byId(id).value = nextSample[id];
+        });
+        if (currentAnalysis && currentAnalysisMode === "local" && currentAnalysisInput) {
+          const localizedInput = {
+            ...currentAnalysisInput,
+            analysis_context: { ...currentAnalysisInput.analysis_context, language },
+          };
+          currentAnalysis = makeLocalAnalysis(localizedInput);
+          currentAnalysisLanguage = language;
+          const index = history.findIndex((item) => item.trade_id === currentAnalysis.trade_id);
+          if (index >= 0) history[index] = currentAnalysis;
+          lastProfile = null;
+          byId("profileBody").className = "profile-empty";
+          byId("profileBody").textContent = translations[language].emptyProfile;
+        }
+        localStorage.setItem("aiCoachLanguage", language);
+        applyLanguage();
+      });
+
+      function sampleCopy(locale) {
+        return locale === "ko-KR"
+          ? { buyReason: "가격이 빠르게 올라 기회를 놓칠까 걱정되어 매수", sellReason: "하락 후 추가 손실이 두려워 매도", klineSummary: "매수 전 양봉 3개가 이어졌고, 매수 후 긴 윗꼬리가 나온 뒤 하락" }
+          : { buyReason: "看到价格快速上涨，担心错过机会，所以买入", sellReason: "下跌后害怕继续亏损，所以卖出", klineSummary: "买入前连续3根阳线，买入后出现长上影线，随后回落" };
+      }
 
       function localDateTime(date) {
         const pad = (value) => String(value).padStart(2, "0");
@@ -219,6 +353,7 @@
       }
       function loadSample() {
         const now = new Date();
+        byId("market").value = "US";
         byId("symbol").value = "AAPL";
         byId("quantity").value = "10";
         byId("buyTime").value = localDateTime(new Date(now.getTime() - 3 * 60 * 60 * 1000));
@@ -226,28 +361,34 @@
         byId("buyPrice").value = "218.5";
         byId("sellPrice").value = "213.2";
         byId("buyReasonType").value = "fear_of_missing_out";
-        byId("buyReason").value = "看到价格快速上涨，担心错过机会，所以买入";
-        byId("sellReason").value = "下跌后害怕继续亏损，所以卖出";
-        byId("klineSummary").value = "买入前连续3根阳线，买入后出现长上影线，随后回落";
+        const sample = sampleCopy(language);
+        byId("buyReason").value = sample.buyReason;
+        byId("sellReason").value = sample.sellReason;
+        byId("klineSummary").value = sample.klineSummary;
+        byId("ocrStatus").hidden = true;
+        byId("ocrStatus").textContent = "";
+        demoSampleActive = true;
         updatePnl();
       }
       loadSample();
+      byId("tradeForm").addEventListener("input", (event) => { if (event.isTrusted) demoSampleActive = false; });
+      byId("tradeForm").addEventListener("change", (event) => { if (event.isTrusted) demoSampleActive = false; });
 
       function apiBase() { return apiInput.value.trim().replace(/\/$/, ""); }
       async function checkService() {
         const connection = byId("connection");
         connection.dataset.state = "checking";
-        byId("connectionText").textContent = "检查服务中";
+        byId("connectionText").textContent = tr("checking");
         try {
           const response = await fetch(`${apiBase()}/health`, { signal: AbortSignal.timeout(1800) });
           if (!response.ok) throw new Error("service unavailable");
           const health = await response.json();
           serviceAnalysisMode = health.analysis_mode || "unknown";
           connection.dataset.state = "online";
-          byId("connectionText").textContent = serviceAnalysisMode === "mock" ? "服务已连接 · Mock" : serviceAnalysisMode === "llm" ? "服务已连接 · LLM" : "AI 服务已连接";
+          byId("connectionText").textContent = serviceAnalysisMode === "mock" ? tr("connectedMock") : serviceAnalysisMode === "llm" ? tr("connectedLlm") : tr("connected");
         } catch {
           connection.dataset.state = "offline";
-          byId("connectionText").textContent = "本地演示模式";
+          byId("connectionText").textContent = tr("offline");
         }
       }
       apiInput.addEventListener("change", () => {
@@ -256,6 +397,113 @@
       });
       checkService();
 
+      let screenshotPreviewUrl = null;
+      function setOcrStatus(message, state = "info") {
+        const status = byId("ocrStatus");
+        status.textContent = message;
+        status.dataset.state = state;
+        status.hidden = !message;
+      }
+      function clearScreenshot() {
+        byId("screenshotFile").value = "";
+        byId("uploadPreview").hidden = true;
+        byId("recognizeScreenshot").disabled = true;
+        byId("uploadMeta").replaceChildren();
+        if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
+        screenshotPreviewUrl = null;
+        setOcrStatus("");
+      }
+      byId("screenshotFile").addEventListener("change", () => {
+        const file = byId("screenshotFile").files[0];
+        if (!file) return clearScreenshot();
+        if (file.size > 8 * 1024 * 1024) {
+          clearScreenshot();
+          setOcrStatus(tr("fileTooLarge"), "error");
+          return;
+        }
+        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+          clearScreenshot();
+          setOcrStatus(tr("invalidImage"), "error");
+          return;
+        }
+        if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
+        screenshotPreviewUrl = URL.createObjectURL(file);
+        byId("screenshotPreview").src = screenshotPreviewUrl;
+        byId("screenshotPreview").alt = file.name;
+        byId("uploadPreview").hidden = false;
+        byId("recognizeScreenshot").disabled = false;
+        byId("uploadMeta").replaceChildren();
+        appendText(byId("uploadMeta"), "div", "", `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "button";
+        remove.textContent = tr("removeImage");
+        remove.addEventListener("click", clearScreenshot);
+        byId("uploadMeta").append(remove);
+        setOcrStatus("");
+      });
+
+      function formatLocalInput(value) {
+        if (!value) return "";
+        const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+        const parsed = new Date(normalized);
+        if (!Number.isFinite(parsed.getTime())) return "";
+        const pad = (number) => String(number).padStart(2, "0");
+        return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+      }
+      function applyRecognizedFields(fields, confidence, warnings, notice) {
+        demoSampleActive = false;
+        const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
+        inputs.forEach((id) => { byId(id).value = ""; });
+        byId("buyReason").value = fields.buy_reason || "";
+        byId("sellReason").value = fields.sell_reason || "";
+        byId("klineSummary").value = "";
+        byId("buyReasonType").value = "other";
+        byId("symbol").value = fields.symbol || "";
+        byId("market").value = fields.market || "OTHER";
+        byId("buyTime").value = formatLocalInput(fields.buy_time);
+        byId("sellTime").value = formatLocalInput(fields.sell_time);
+        if (fields.buy_price != null) byId("buyPrice").value = fields.buy_price;
+        if (fields.sell_price != null) byId("sellPrice").value = fields.sell_price;
+        if (fields.quantity != null) byId("quantity").value = fields.quantity;
+        updatePnl();
+        const labelFor = { symbol: "symbol", market: "market", buy_time: "buyTime", sell_time: "sellTime", buy_price: "buyPrice", sell_price: "sellPrice", quantity: "quantity", buy_reason: "buyReason", sell_reason: "sellReason" };
+        const recognized = Object.keys(labelFor)
+          .filter((key) => fields[key] != null)
+          .map((key) => `${translations[language].labels[labelFor[key]] || (key === "market" ? tr("market") : key)} ${Number.isFinite(confidence[key]) ? `${Math.round(confidence[key] * 100)}%` : "—"}`);
+        const details = [recognized.length ? `${tr("confidence")}: ${recognized.join(" · ")}` : tr("noFields"), notice, ...warnings].filter(Boolean);
+        setOcrStatus(`${tr("ocrFilled")}\n${details.join("\n")}`, "success");
+      }
+      byId("recognizeScreenshot").addEventListener("click", async () => {
+        const file = byId("screenshotFile").files[0];
+        if (!file) return;
+        const button = byId("recognizeScreenshot");
+        button.disabled = true;
+        button.textContent = tr("recognizing");
+        setOcrStatus(tr("recognizing"));
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          form.append("language", language);
+          const response = await fetch(`${apiBase()}/recognize-trade-screenshot`, { method: "POST", body: form });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.detail || `${tr("apiError")}${response.status}`);
+          }
+          const result = await response.json();
+          if (result.status === "mock") {
+            setOcrStatus(`${tr("mockOcr")}\n${(result.warnings || []).join("\n")}`, "error");
+          } else {
+            applyRecognizedFields(result.fields || {}, result.field_confidence || {}, result.warnings || [], result.notice || "");
+          }
+        } catch (error) {
+          setOcrStatus(error instanceof TypeError ? tr("noOcrService") : `${tr("ocrFailed")}\n${error.message || ""}`, "error");
+        } finally {
+          button.disabled = !byId("screenshotFile").files[0];
+          button.textContent = tr("recognizeScreenshot");
+        }
+      });
+
       function updatePnl() {
         const buy = Number(byId("buyPrice").value);
         const sell = Number(byId("sellPrice").value);
@@ -263,7 +511,7 @@
         const pnl = (sell - buy) * quantity;
         if (Number.isFinite(pnl) && Number.isFinite(buy) && buy > 0 && Number.isFinite(quantity) && quantity > 0) {
           const sign = pnl > 0 ? "+" : "";
-          byId("pnlPreview").textContent = `未计手续费盈亏 ${sign}${pnl.toFixed(2)} · ${(100 * (sell - buy) / buy).toFixed(2)}%`;
+          byId("pnlPreview").textContent = `${tr("pnlPrefix")} ${sign}${pnl.toFixed(2)} · ${(100 * (sell - buy) / buy).toFixed(2)}${tr("pnlPercentSuffix")}`;
         } else {
           byId("pnlPreview").textContent = "";
         }
@@ -275,41 +523,43 @@
         return { problem_code: code, problem_name: name, severity, evidence, explanation, theory_reference: theory };
       }
       function makeLocalAnalysis(data) {
+        const korean = language === "ko-KR";
         const problems = [];
         const tags = [];
         const buy = data.decision.buy_reason;
         const sell = data.decision.sell_reason || "";
-        if (["担心错过", "害怕错过", "怕错过", "追涨", "追高", "怕买不到"].some((word) => buy.includes(word))) {
-          problems.push(problem("FOMO_BUYING", "买入理由可能受到害怕错过的情绪影响", "medium", "买入理由中提到担心错过或追涨。", "情绪可能参与了入场决策；仅凭一笔记录，无法确认是否形成稳定模式。", "识别害怕错过（AI Investment Coach 团队原创知识卡）"));
-          tags.push({ tag_code: "FOMO_SENSITIVE", tag_name: "容易受错失焦虑影响", confidence: 0.62 });
+        if (["担心错过", "害怕错过", "怕错过", "追涨", "追高", "怕买不到", "놓칠까", "FOMO", "추격 매수", "추격매수"].some((word) => buy.includes(word))) {
+          problems.push(problem("FOMO_BUYING", korean ? "기회를 놓칠까 하는 불안이 매수에 영향을 주었을 가능성" : "买入理由可能受到害怕错过的情绪影响", "medium", korean ? "매수 이유에 기회를 놓칠까 걱정했다는 내용이 있습니다." : "买入理由中提到担心错过或追涨。", korean ? "감정이 진입 결정에 관여했을 수 있습니다. 한 건만으로 반복 패턴이라고 단정할 수 없습니다." : "情绪可能参与了入场决策；仅凭一笔记录，无法确认是否形成稳定模式。", korean ? null : "识别害怕错过（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "FOMO_SENSITIVE", tag_name: korean ? "기회 상실 불안에 민감함" : "容易受错失焦虑影响", confidence: 0.62 });
         }
-        if (["恐慌", "害怕继续亏", "怕继续亏", "受不了亏损"].some((word) => sell.includes(word))) {
-          problems.push(problem("EMOTION_DRIVEN_EXIT", "卖出可能受到亏损压力影响", "medium", "卖出理由提到害怕继续亏损。", "亏损后的不适感可能影响卖出时机；需要对照事前退出条件判断是否偏离计划。", "区分规则止损与情绪卖出（AI Investment Coach 团队原创知识卡）"));
-          tags.push({ tag_code: "LOSS_SENSITIVE", tag_name: "亏损压力敏感", confidence: 0.6 });
+        if (["恐慌", "害怕继续亏", "怕继续亏", "受不了亏损", "더 손실", "손실이 두려", "손실 공포", "무서워서 매도"].some((word) => sell.includes(word))) {
+          problems.push(problem("EMOTION_DRIVEN_EXIT", korean ? "손실 압박이 매도 결정에 영향을 주었을 가능성" : "卖出可能受到亏损压力影响", "medium", korean ? "매도 이유에 추가 손실에 대한 두려움이 나타납니다." : "卖出理由提到害怕继续亏损。", korean ? "손실에 대한 불편함이 매도 시점에 영향을 주었을 수 있습니다. 사전 청산 조건과 비교해 보세요." : "亏损后的不适感可能影响卖出时机；需要对照事前退出条件判断是否偏离计划。", korean ? null : "区分规则止损与情绪卖出（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "LOSS_SENSITIVE", tag_name: korean ? "손실 압박에 민감함" : "亏损压力敏感", confidence: 0.6 });
         }
-        if (!(buy + " " + sell).match(/止损|止盈|计划|规则|条件|退出/)) {
-          problems.push(problem("EXIT_PLAN_NOT_RECORDED", "记录中没有明确的退出计划", "low", "买卖理由中没有提到止盈、止损或退出条件。", "这只说明当前记录未写出退出规则，不能据此断定用户没有制定计划。", "先定义交易计划（AI Investment Coach 团队原创知识卡）"));
+        if (!(buy + " " + sell).match(/止损|止盈|计划|规则|条件|退出|손절|익절|계획|규칙|조건|청산/)) {
+          problems.push(problem("EXIT_PLAN_NOT_RECORDED", korean ? "기록에 명확한 청산 계획이 없습니다" : "记录中没有明确的退出计划", "low", korean ? "매매 이유에 익절·손절 또는 청산 조건이 언급되지 않았습니다." : "买卖理由中没有提到止盈、止损或退出条件。", korean ? "현재 기록에 규칙이 없다는 뜻일 뿐, 계획이 없었다고 단정할 수는 없습니다." : "这只说明当前记录未写出退出规则，不能据此断定用户没有制定计划。", korean ? null : "先定义交易计划（AI Investment Coach 团队原创知识卡）"));
         }
         if (!problems.length) {
-          problems.push(problem("INSUFFICIENT_SIGNAL", "当前记录未显示明确的行为问题", "low", "当前理由没有足以支持特定行为判断的线索。", "建议保留事前计划和更多交易记录，再观察是否存在重复模式。", "小样本不等于稳定性格（AI Investment Coach 团队原创知识卡）"));
-          tags.push({ tag_code: "NEEDS_MORE_DATA", tag_name: "需要更多样本", confidence: 0.45 });
+          problems.push(problem("INSUFFICIENT_SIGNAL", korean ? "현재 기록에서 명확한 행동 문제는 확인되지 않았습니다" : "当前记录未显示明确的行为问题", "low", korean ? "특정 행동을 판단할 만한 단서가 충분하지 않습니다." : "当前理由没有足以支持特定行为判断的线索。", korean ? "사전 계획과 거래 기록을 더 남겨 반복 패턴이 있는지 살펴보세요." : "建议保留事前计划和更多交易记录，再观察是否存在重复模式。", korean ? null : "小样本不等于稳定性格（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "NEEDS_MORE_DATA", tag_name: korean ? "더 많은 표본 필요" : "需要更多样本", confidence: 0.45 });
         }
         const notable = problems.filter((item) => item.severity !== "low");
         return {
           trade_id: data.trade_id,
           trade_time: data.trade.buy_time,
           analysis_type: "single_trade_behavior_analysis",
-          behavior_summary: notable.length ? `本次记录可能体现出：${notable.map((item) => item.problem_name).join("；")}。` : "本次记录的信息有限，暂未发现明确的行为问题。",
+          behavior_summary: notable.length ? (korean ? `이번 기록에서 다음 가능성이 관찰됩니다: ${notable.map((item) => item.problem_name).join("; ")}.` : `本次记录可能体现出：${notable.map((item) => item.problem_name).join("；")}。`) : (korean ? "이번 기록만으로는 정보가 제한적이며 명확한 행동 문제는 확인되지 않았습니다." : "本次记录的信息有限，暂未发现明确的行为问题。"),
           detected_behavior_problems: problems,
           personality_tags: tags,
-          coaching_advice: ["下次交易前写下入场理由、退出条件和可接受的最大损失。", "交易结束后对照事前计划复盘，不要只用盈亏评价决策。"],
-          reflection_questions: ["这次买入是否符合事前写下的条件？", "卖出时我是在执行原计划，还是在回应当下情绪？"],
-          risk_notice: "以上内容仅用于投资行为复盘和教育，不构成任何投资建议。",
-          uncertainty: { level: "high", reason: "仅有一笔交易记录；行为标签是待验证的线索，不代表长期投资性格。" },
+          coaching_advice: korean ? ["다음 거래 전에 진입 이유, 청산 조건, 감당 가능한 최대 손실을 적어 두세요.", "거래 후에는 손익만으로 판단하지 말고 사전 계획과 비교해 복기하세요."] : ["下次交易前写下入场理由、退出条件和可接受的最大损失。", "交易结束后对照事前计划复盘，不要只用盈亏评价决策。"],
+          reflection_questions: korean ? ["이번 매수는 사전에 적어 둔 조건에 부합했나요?", "매도할 때 기존 계획을 실행했나요, 아니면 순간적인 감정에 반응했나요?"] : ["这次买入是否符合事前写下的条件？", "卖出时我是在执行原计划，还是在回应当下情绪？"],
+          risk_notice: korean ? "이 내용은 투자 행동 복기와 교육 목적이며 투자 조언이 아닙니다." : "以上内容仅用于投资行为复盘和教育，不构成任何投资建议。",
+          uncertainty: { level: "high", reason: korean ? "현재 표본은 한 건뿐입니다. 행동 태그는 검증이 필요한 단서이며 장기적인 투자 성향을 뜻하지 않습니다." : "仅有一笔交易记录；行为标签是待验证的线索，不代表长期投资性格。" },
         };
       }
 
       function buildRequest() {
+        const copy = translations[language];
         const buyTime = new Date(byId("buyTime").value);
         const sellTimeValue = byId("sellTime").value;
         const sellPriceValue = byId("sellPrice").value;
@@ -318,13 +568,13 @@
         const sellPrice = sellPriceValue ? Number(sellPriceValue) : null;
         const quantity = Number(byId("quantity").value);
         const buyReason = byId("buyReason").value.trim();
-        const error = !buyReason ? "请填写买入理由。"
-          : !Number.isFinite(buyTime.getTime()) ? "请填写有效的买入时间。"
-          : !Number.isFinite(buyPrice) || buyPrice <= 0 ? "买入价格必须大于 0。"
-          : !Number.isInteger(quantity) || quantity <= 0 ? "股数必须是正整数。"
-          : (Boolean(sellTime) !== (sellPrice !== null)) ? "卖出时间和卖出价格需要同时填写，或同时留空。"
-          : sellTime && (!Number.isFinite(sellTime.getTime()) || sellTime < buyTime) ? "卖出时间不能早于买入时间。"
-          : sellPrice !== null && (!Number.isFinite(sellPrice) || sellPrice <= 0) ? "卖出价格必须大于 0。"
+        const error = !buyReason ? copy.formMissingReason
+          : !Number.isFinite(buyTime.getTime()) ? copy.formBuyTime
+          : !Number.isFinite(buyPrice) || buyPrice <= 0 ? copy.formBuyPrice
+          : !Number.isInteger(quantity) || quantity <= 0 ? copy.formQuantity
+          : (Boolean(sellTime) !== (sellPrice !== null)) ? copy.formSellPair
+          : sellTime && (!Number.isFinite(sellTime.getTime()) || sellTime < buyTime) ? copy.formSellTime
+          : sellPrice !== null && (!Number.isFinite(sellPrice) || sellPrice <= 0) ? copy.formSellPrice
           : null;
         if (error) throw new Error(error);
         const profitLoss = sellPrice === null ? null : Number(((sellPrice - buyPrice) * quantity).toFixed(2));
@@ -332,7 +582,7 @@
         return {
           user_id: "web-demo",
           trade_id: `web-${Date.now()}`,
-          stock: { symbol: byId("symbol").value.trim() || "UNKNOWN", market: "US" },
+          stock: { symbol: byId("symbol").value.trim() || "UNKNOWN", market: byId("market").value },
           trade: {
             buy_time: buyTime.toISOString(),
             sell_time: sellTime ? sellTime.toISOString() : null,
@@ -345,10 +595,10 @@
           decision: {
             buy_reason: `${reasonType}：${buyReason}`,
             sell_reason: byId("sellReason").value.trim() || null,
-            planned_holding_period: "当日短线",
+            planned_holding_period: language === "ko-KR" ? "당일 단타" : "当日短线",
           },
           market_snapshot: { kline_summary: byId("klineSummary").value.trim() || null },
-          analysis_context: { language: "zh-CN", risk_notice_required: true },
+          analysis_context: { language, risk_notice_required: true },
           rag_context: [],
         };
       }
@@ -364,7 +614,7 @@
         }
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          throw new Error(payload?.detail || `AI 服务返回错误：${response.status}`);
+          throw new Error(payload?.detail || `${tr("apiError")}${response.status}`);
         }
         return response.json();
       }
@@ -376,54 +626,65 @@
         parent.append(node);
         return node;
       }
+      function renderEmptyState() {
+        const host = byId("resultBody");
+        host.replaceChildren();
+        const empty = document.createElement("div"); empty.className = "empty-state";
+        appendText(empty, "div", "empty-mark", "↗");
+        appendText(empty, "p", "empty-title", tr("waitingTitle"));
+        appendText(empty, "p", "empty-copy", tr("waitingCopy"));
+        host.append(empty);
+      }
       function renderAnalysis(result, mode) {
         const host = byId("resultBody");
         host.replaceChildren();
         const top = document.createElement("div"); top.className = "result-top";
-        const title = document.createElement("div");
-        appendText(title, "h2", "", "行为复盘结果");
-        appendText(title, "div", "result-date", new Date(result.trade_time).toLocaleString("zh-CN"));
+          const title = document.createElement("div");
+        appendText(title, "h2", "", tr("resultTitle"));
+        appendText(title, "div", "result-date", new Date(result.trade_time).toLocaleString(language));
+        if (currentAnalysisLanguage !== language) appendText(title, "div", "result-date", tr("resultLanguageMismatch"));
         top.append(title);
-        const badge = mode === "local" ? "本地规则模拟" : serviceAnalysisMode === "mock" ? "后端 Mock 模式" : "LLM 服务分析";
+        const badge = mode === "local" ? (language === "ko-KR" ? "로컬 규칙 시뮬레이션" : "本地规则模拟") : serviceAnalysisMode === "mock" ? (language === "ko-KR" ? "백엔드 Mock 모드" : "后端 Mock 模式") : (language === "ko-KR" ? "LLM 분석" : "LLM 服务分析");
         appendText(top, "span", `mode-badge${mode === "local" || serviceAnalysisMode === "mock" ? " local" : ""}`, badge);
         host.append(top);
         appendText(host, "p", "summary", result.behavior_summary);
-        appendText(host, "div", "subhead", "观察到的线索");
+        appendText(host, "div", "subhead", tr("evidence"));
         const problems = document.createElement("div"); problems.className = "problem-list";
         for (const item of result.detected_behavior_problems) {
           const box = document.createElement("article"); box.className = `problem${item.severity === "high" ? " high" : ""}`;
           const row = document.createElement("div"); row.className = "problem-title-row";
           appendText(row, "strong", "problem-title", item.problem_name);
-          appendText(row, "span", `severity${item.severity === "high" ? " high" : ""}`, { high: "较明显", medium: "留意", low: "线索" }[item.severity] || "线索");
+          appendText(row, "span", `severity${item.severity === "high" ? " high" : ""}`, translations[language].severity[item.severity] || translations[language].severity.low);
           box.append(row);
-          appendText(box, "p", "", `依据：${item.evidence}`);
+          appendText(box, "p", "", `${tr("basis")}${item.evidence}`);
           appendText(box, "p", "", item.explanation);
-          if (item.theory_reference) appendText(box, "p", "theory", `理论参考：${item.theory_reference}`);
+          if (item.theory_reference) appendText(box, "p", "theory", `${tr("theory")}${item.theory_reference}`);
           problems.append(box);
         }
         host.append(problems);
-        appendText(host, "div", "subhead", "本次行为标签");
+        appendText(host, "div", "subhead", tr("tags"));
         const tags = document.createElement("div"); tags.className = "tag-list";
-        if (!result.personality_tags.length) appendText(tags, "span", "field-hint", "暫未形成明确标签。".replace("暫", "暂"));
+        if (!result.personality_tags.length) appendText(tags, "span", "field-hint", tr("noTags"));
         for (const item of result.personality_tags) {
           const tag = document.createElement("div"); tag.className = "tag";
           appendText(tag, "div", "tag-name", item.tag_name);
-          appendText(tag, "div", "tag-confidence", `${Math.round(item.confidence * 100)}% 线索强度`);
+          appendText(tag, "div", "tag-confidence", `${Math.round(item.confidence * 100)}${tr("confidenceSuffix")}`);
           tags.append(tag);
         }
         host.append(tags);
-        appendText(host, "div", "subhead", "复盘建议");
+        appendText(host, "div", "subhead", tr("advice"));
         const advice = document.createElement("ol"); advice.className = "advice-list";
         result.coaching_advice.forEach((line) => appendText(advice, "li", "", line));
         host.append(advice);
         if (result.reflection_questions?.length) {
-          appendText(host, "div", "subhead", "复盘问题");
+          appendText(host, "div", "subhead", tr("questions"));
           const questions = document.createElement("ul"); questions.className = "advice-list";
           result.reflection_questions.forEach((line) => appendText(questions, "li", "", line));
           host.append(questions);
         }
         const uncertain = document.createElement("div"); uncertain.className = "uncertainty";
-        appendText(uncertain, "strong", "", `判断边界 · ${result.uncertainty.level === "high" ? "样本较少" : result.uncertainty.level === "medium" ? "样本一般" : "样本较多"}`);
+        const level = result.uncertainty.level === "high" ? tr("fewSamples") : result.uncertainty.level === "medium" ? tr("someSamples") : tr("manySamples");
+        appendText(uncertain, "strong", "", `${tr("uncertainty")} · ${level}`);
         appendText(uncertain, "p", "", result.uncertainty.reason);
         host.append(uncertain);
         appendText(host, "p", "notice", result.risk_notice);
@@ -435,13 +696,16 @@
         const errorNode = byId("formError");
         errorNode.hidden = true;
         button.disabled = true;
-        button.textContent = "分析中…";
+        button.textContent = tr("analyzing");
         try {
           const request = buildRequest();
           const response = await submitToService("/analyze-trade", request);
           if (response && serviceAnalysisMode === "unknown") await checkService();
           const mode = response ? "api" : "local";
           currentAnalysis = response || makeLocalAnalysis(request);
+          currentAnalysisMode = mode;
+          currentAnalysisInput = request;
+          currentAnalysisLanguage = language;
           history.unshift(currentAnalysis);
           if (history.length > 100) history.pop();
           lastProfile = null;
@@ -449,14 +713,14 @@
           renderAnalysis(currentAnalysis, mode);
           if (!response) {
             byId("connection").dataset.state = "offline";
-            byId("connectionText").textContent = "本地演示模式";
+            byId("connectionText").textContent = tr("offline");
           }
         } catch (error) {
-          errorNode.textContent = error instanceof Error ? error.message : "分析失败，请检查输入。";
+          errorNode.textContent = error instanceof Error ? error.message : tr("analyzeFailed");
           errorNode.hidden = false;
         } finally {
           button.disabled = false;
-          button.textContent = "分析这笔交易";
+          button.textContent = tr("analyze");
         }
       });
 
@@ -481,7 +745,12 @@
             const sampleCount = selected.length;
             const patterns = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 3);
             const recurringProblems = [...problemCounts.values()].sort((a, b) => b.count - a.count).slice(0, 3);
-            return { days, sampleCount, confidence: sampleCount < 3 ? "low" : sampleCount < 10 ? "medium" : "high", summary: sampleCount === 0 ? `最近${days}天没有可用交易样本。` : sampleCount < 3 ? `最近${days}天有${sampleCount}笔样本，样本较少，暂不判断稳定行为模式。` : patterns.length ? `最近${days}天有${sampleCount}笔样本；较常出现的标签是${patterns.slice(0, 2).map((x) => x.name).join("、")}。` : `最近${days}天有${sampleCount}笔样本，暂未出现重复的行为标签。`, patterns, recurringProblems };
+            const format = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => values[key]);
+            const summary = sampleCount === 0 ? format(tr("recentNoSamples"), { days })
+              : sampleCount < 3 ? format(tr("fewProfile"), { days, count: sampleCount })
+              : patterns.length ? format(tr("profileHasTags"), { days, count: sampleCount, tags: patterns.slice(0, 2).map((x) => x.name).join(language === "ko-KR" ? ", " : "、") })
+              : format(tr("profileNoTags"), { days, count: sampleCount });
+            return { days, sampleCount, confidence: sampleCount < 3 ? "low" : sampleCount < 10 ? "medium" : "high", summary, patterns, recurringProblems };
           }),
         };
       }
@@ -494,28 +763,28 @@
         }));
         for (const window of windows) {
           const card = document.createElement("article"); card.className = "profile-window";
-          appendText(card, "h3", "", `${window.days} 天观察`);
+          appendText(card, "h3", "", `${window.days} ${tr("profileDays")}`);
           const count = document.createElement("div"); count.className = "profile-count";
           count.textContent = window.sampleCount;
-          const unit = document.createElement("span"); unit.textContent = ` 笔 · ${{ low: "样本较少", medium: "样本一般", high: "样本较多" }[window.confidence]}`;
+          const unit = document.createElement("span"); unit.textContent = `${tr("countUnit")}${translations[language].confidenceLevels[window.confidence]}`;
           count.append(unit); card.append(count);
           appendText(card, "p", "profile-note", window.summary);
-          if (window.patterns.length) appendText(card, "div", "subhead", "常见行为标签");
+          if (window.patterns.length) appendText(card, "div", "subhead", tr("patterns"));
           const patterns = document.createElement("div"); patterns.className = "profile-patterns";
           for (const pattern of window.patterns) {
             const row = document.createElement("div"); row.className = "profile-pattern";
             appendText(row, "span", "", pattern.name);
-            appendText(row, "span", "", `${pattern.count}/${window.sampleCount} 笔`);
+            appendText(row, "span", "", `${pattern.count}/${window.sampleCount}${tr("sampleUnit")}`);
             patterns.append(row);
           }
           card.append(patterns);
           if (window.recurringProblems?.length) {
-            appendText(card, "div", "subhead", "重复出现的问题");
+            appendText(card, "div", "subhead", tr("recurring"));
             const problems = document.createElement("div"); problems.className = "profile-patterns";
             for (const item of window.recurringProblems) {
               const row = document.createElement("div"); row.className = "profile-pattern";
               appendText(row, "span", "", item.name);
-              appendText(row, "span", "", `${item.count}/${window.sampleCount} 笔`);
+              appendText(row, "span", "", `${item.count}/${window.sampleCount}${tr("sampleUnit")}`);
               problems.append(row);
             }
             card.append(problems);
@@ -523,20 +792,20 @@
           host.append(card);
         }
         const note = document.createElement("p"); note.className = "notice"; note.style.gridColumn = "1 / -1";
-        note.textContent = `统计截至 ${new Date(profile.as_of).toLocaleDateString("zh-CN")} · ${source === "local" ? "本地演示数据" : "AI 服务画像"}。样本较少时，标签只代表待观察的倾向，不是心理诊断。`;
+        note.textContent = `${tr("profileAsOf")} ${new Date(profile.as_of).toLocaleDateString(language)} · ${source === "local" ? tr("localData") : tr("aiProfile")}。${tr("profileLimit")}`;
         host.append(note);
       }
       byId("refreshProfile").addEventListener("click", async () => {
         const host = byId("profileBody");
-        if (!history.length) { host.className = "profile-empty"; host.textContent = "先完成一笔交易复盘，再生成行为画像。"; return; }
+        if (!history.length) { host.className = "profile-empty"; host.textContent = tr("profileNeeded"); return; }
         try {
-          const profile = await submitToService("/analyze-profile", { user_id: "web-demo", trade_analyses: history });
+          const profile = await submitToService("/analyze-profile", { user_id: "web-demo", language, trade_analyses: history });
           lastProfile = profile || localProfile();
           lastProfileSource = profile ? "api" : "local";
           renderProfile(lastProfile, lastProfileSource);
         } catch (error) {
           host.className = "profile-empty";
-          host.textContent = error instanceof Error ? error.message : "画像生成失败。";
+          host.textContent = error instanceof Error ? error.message : tr("profileFailed");
         }
       });
       document.querySelectorAll("[data-tab]").forEach((tab) => tab.addEventListener("click", () => {
@@ -546,7 +815,9 @@
         byId("profileView").style.display = profileSelected ? "block" : "none";
         if (profileSelected && lastProfile) renderProfile(lastProfile, lastProfileSource);
       }));
+      applyLanguage();
       updatePnl();
     </script>
   </body>
 </html>
+

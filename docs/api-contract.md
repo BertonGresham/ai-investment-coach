@@ -127,7 +127,7 @@ Content-Type: application/json
 
 ### 累积投资行为画像
 
-POST /analyze-profile 接收由 /analyze-trade 返回的分析结果列表。画像时间窗为近 7、30、90 天，按最新一笔交易时间计算；as_of 可指定统计基准时间。少于 3 笔样本时，置信级别为 low。
+POST /analyze-profile 接收由 /analyze-trade 返回的分析结果列表。画像时间窗为近 7、30、90 天，按最新一笔交易时间计算；as_of 可指定统计基准时间。language 支持 zh-CN、ko-KR。少于 3 笔样本时，置信级别为 low。
 
 ~~~json
 {
@@ -169,6 +169,12 @@ POST /analyze-profile 接收由 /analyze-trade 返回的分析结果列表。画
 ~~~
 
 Response 包含 short_term、medium_term、long_term 三个窗口的样本数、置信级别、重复标签和摘要。画像只汇总行为线索，不构成心理诊断。
+
+### 交易截图识别
+
+`POST /recognize-trade-screenshot` 使用 `multipart/form-data`，表单字段为 `file`（PNG/JPEG/WebP，最大 8 MB）和 `language`（`zh-CN` 或 `ko-KR`）。LLM 模式通过视觉模型提取一笔明确交易的代码、市场、买卖时间/价格和数量；理由只会在截图中明确可见时读取，不从盈亏或 K 线推测。含糊字段返回 null，并提供 `field_confidence` 和 `warnings`。调用方必须让用户确认识别结果，再提交 `/analyze-trade`。
+
+Mock 模式不会假装完成图片识别，而是返回 `status: "mock"` 和清楚的说明。
 
 ### RAG知识库导入
 
@@ -244,3 +250,4 @@ POST /api/trades
   "reason_text": "看到价格快速上涨，担心错过机会"
 }
 ```
+
