@@ -1,12 +1,17 @@
 from datetime import datetime, timezone
+import base64
+import os
 import unittest
+from unittest.mock import patch
 
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from fastapi import HTTPException
 
 from app.main import (
     _keep_supported_theory_references,
     analyze_profile,
+    app,
     mock_behavior_analysis,
     mock_screenshot_recognition,
     validate_screenshot_image,
@@ -212,6 +217,22 @@ class BehaviorAnalysisTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as too_large:
             validate_screenshot_image("image/png", b"\x89PNG\r\n\x1a\n" + b"0" * (8 * 1024 * 1024))
         self.assertEqual(too_large.exception.status_code, 413)
+
+    def test_screenshot_multipart_route_returns_mock_without_claiming_ocr(self) -> None:
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p2cAAAAASUVORK5CYII="
+        )
+        with patch.dict(os.environ, {"USE_MOCK_LLM": "true"}):
+            response = TestClient(app).post(
+                "/recognize-trade-screenshot",
+                files={"file": ("trade.png", png, "image/png")},
+                data={"language": "ko-KR"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "mock")
+        self.assertIsNone(response.json()["fields"]["symbol"])
+        self.assertIn("이미지 인식", response.json()["warnings"][0])
 
 
 if __name__ == "__main__":
