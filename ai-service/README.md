@@ -21,6 +21,14 @@ uvicorn app.main:app --reload --port 8001 --env-file .env
 
 接口文档：http://localhost:8001/docs
 
+## 验证
+
+安装依赖后，在 `ai-service` 目录运行：
+
+~~~powershell
+python -m unittest discover -s tests -v
+~~~
+
 ## 使用真实模型和 RAG
 
 复制 .env.example 为 .env，然后填写：
@@ -43,5 +51,4 @@ python scripts/ingest_knowledge.py
 
 ## 画像口径
 
-画像只汇总已提交的单笔分析结果：短期为 7 天，中期为 30 天，长期为 90 天。少于 3 笔样本时，置信级别为低，并明确提示不可据此认定稳定人格。窗口基于请求中的最新交易时间计算，也可通过 as_of 指定。
-
+画像只汇总已提交的单笔分析结果：短期为 7 天，中期为 30 天，长期为 90 天。少于 3 笔样本时，置信级别为低，并明确提示不可据此认定稳定人格。同一请求不接受重复的 trade_id。窗口基于请求中的最新交易时间计算，也可通过 as_of 指定。
