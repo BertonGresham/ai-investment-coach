@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 class Stock(StrictModel):
@@ -30,12 +30,24 @@ class Trade(StrictModel):
     def validate_trade_time(cls, value: str | None) -> str | None:
         if value is None:
             return None
+        value = value.strip()
         normalized = value.replace("Z", "+00:00")
         try:
             datetime.fromisoformat(normalized)
         except ValueError:
             date.fromisoformat(value)
         return value
+
+    @model_validator(mode="after")
+    def validate_closed_trade(self) -> "Trade":
+        if (self.sell_time is None) != (self.sell_price is None):
+            raise ValueError("sell_time and sell_price must either both be set or both be empty.")
+        if self.sell_time is not None:
+            buy_at = _parse_iso_time(self.buy_time)
+            sell_at = _parse_iso_time(self.sell_time)
+            if sell_at < buy_at:
+                raise ValueError("sell_time must not be earlier than buy_time.")
+        return self
 
 
 class Decision(StrictModel):
@@ -108,8 +120,8 @@ class Uncertainty(StrictModel):
 
 
 class TradeAnalysisResponse(StrictModel):
-    trade_id: str
-    trade_time: str
+    trade_id: str = Field(min_length=1, max_length=100)
+    trade_time: str = Field(min_length=1, max_length=40)
     analysis_type: Literal["single_trade_behavior_analysis"]
     behavior_summary: str
     detected_behavior_problems: list[BehaviorProblem]
@@ -119,11 +131,28 @@ class TradeAnalysisResponse(StrictModel):
     risk_notice: str
     uncertainty: Uncertainty
 
+    @field_validator("trade_time")
+    @classmethod
+    def validate_trade_time(cls, value: str) -> str:
+        value = value.strip()
+        _parse_iso_time(value)
+        return value
+
 
 class ProfileRequest(StrictModel):
     user_id: str = Field(min_length=1, max_length=100)
     trade_analyses: list[TradeAnalysisResponse] = Field(min_length=1, max_length=500)
     as_of: datetime | None = None
+
+    @field_validator("trade_analyses")
+    @classmethod
+    def require_unique_trade_ids(
+        cls, analyses: list[TradeAnalysisResponse]
+    ) -> list[TradeAnalysisResponse]:
+        trade_ids = [item.trade_id for item in analyses]
+        if len(trade_ids) != len(set(trade_ids)):
+            raise ValueError("trade_analyses must not contain duplicate trade_id values.")
+        return analyses
 
 
 class ProfilePattern(StrictModel):
@@ -151,3 +180,13 @@ class InvestmentProfileResponse(StrictModel):
     long_term: ProfileWindow
     limitation: str
 
+
+def _parse_iso_time(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        parsed = datetime.combine(date.fromisoformat(value), datetime.min.time())
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
