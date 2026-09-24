@@ -55,7 +55,11 @@ def retrieve_theory(query: str, limit: int = 3) -> list[RagEvidence]:
     for index, content in enumerate(documents):
         metadata = metadatas[index] or {}
         distance = distances[index] if index < len(distances) else None
-        score = max(0.0, min(1.0, 1.0 - float(distance))) if distance is not None else None
+        score = (
+            max(0.0, min(1.0, 1.0 - float(distance) / 2.0))
+            if distance is not None
+            else None
+        )
         evidence.append(
             RagEvidence(
                 source=str(metadata.get("source", "团队知识库")),
@@ -82,4 +86,3 @@ def ingest_documents(documents: list[dict[str, str]]) -> int:
         ],
     )
     return len(documents)
-
