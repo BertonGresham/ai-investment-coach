@@ -65,9 +65,13 @@ class BehaviorAnalysisTests(unittest.TestCase):
             {tag.tag_code for tag in result.personality_tags},
             {"FOMO_SENSITIVE", "LOSS_SENSITIVE"},
         )
-        self.assertTrue(
-            all(problem.severity == "medium" for problem in result.detected_behavior_problems)
-        )
+        severity_by_code = {
+            problem.problem_code: problem.severity
+            for problem in result.detected_behavior_problems
+        }
+        self.assertEqual(severity_by_code["FOMO_BUYING"], "medium")
+        self.assertEqual(severity_by_code["EMOTION_DRIVEN_EXIT"], "medium")
+        self.assertEqual(severity_by_code["EXIT_PLAN_NOT_RECORDED"], "low")
         self.assertEqual(result.uncertainty.level, "high")
 
     def test_analysis_prompt_omits_user_and_stock_identifiers(self) -> None:
