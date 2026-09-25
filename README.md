@@ -49,7 +49,7 @@ ai-investment-coach/
 python -m http.server 5173 --directory web-demo
 ```
 
-浏览器打开 `http://localhost:5173`。网页无需安装 Node 依赖；未启动 AI 服务时会使用明确标注的本地规则模拟。需要联调 API 时，再按下方说明启动 AI 服务。
+浏览器打开 `http://localhost:5173`。网页无需安装 Node 依赖；支持中韩文、美股买入前日 K 自动背景与附来源的书籍笔记。自动行情需要启动下方 AI 服务；初始案例使用明确标记的合成数据。未启动 AI 服务时，取消自动行情可使用明确标注的本地规则模拟。
 
 ### 1. AI服务
 

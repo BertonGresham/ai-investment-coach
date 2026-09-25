@@ -13,6 +13,33 @@
 | data-service | 8002 | CSV、K线、资讯数据服务 |
 | frontend-app | Expo默认 | 移动端App |
 
+## 自动历史行情背景
+
+`POST /analyze-market-context` 位于 AI 服务，首版只支持美股日 K。将来由数据服务替换行情适配器。
+
+```json
+{
+  "symbol": "AAPL",
+  "market": "US",
+  "as_of": "2025-07-25T10:30:00-04:00",
+  "source": "yahoo",
+  "language": "zh-CN",
+  "focus": "fear_of_missing_out"
+}
+```
+
+- `as_of` 必须带时区，不能晚于当前时间。转为纽约日期后，严格排除当天和之后的日 K。
+- `source` 为 `yahoo`（默认，真实历史数据）或 `demo`（明确标注的合成数据，无外网请求）。不受 `USE_MOCK_LLM` 控制；即使 Mock，选择 Yahoo 仍会读取真实行情。
+- `focus` 为 `general` 或 `fear_of_missing_out`；只决定参考笔记，不表示已经检测到行为问题。
+- 响应含 `source/provider/retrieved_at/exchange_timezone/cutoff_date_exclusive/data_start/data_end/bar_count/price_basis`、`metrics`、`kline_summary`、`book_notes`、`rag_context`、`warnings`。
+- `metrics`：`last_close`（USD）、`daily_change_pct`（末两根日 K 百分比变化）、`five_session_change_pct`（最后 6 根日 K 首尾变化百分比）、`sma20`（末 20 根收盘均值）、`volume_vs_previous20`（最后成交量 / 此前 20 根均量）。涨幅单位是百分比，不是小数收益率；样本或有效分母不足时为 `null`。
+- `book_notes` 带作者、书名、年份、章节、原文与目录链接、权利范围，以及区分自行概括和原文引述的 `content_type`。
+- `explanation_mode=calculated_facts_and_curated_notes`、`retrieval_method=curated_topic_rules`：此接口不调用 LLM/Embeddings，不产生模型费用。
+- 把响应的 `kline_summary` 放入 `/analyze-trade` 的 `market_snapshot.kline_summary`，把 `rag_context` 原样传入，其他行情字段由主后端保存。不要把整份响应直接放入 `market_snapshot`。
+- 无数据返回 404；股票类型不支持或输入不合法返回 422；供应商失败或数据异常返回 502。行情错误为 `detail: {code, message}`，普通参数校验保留 FastAPI 标准结构。
+- 没有新闻和公告数据时不生成相关内容。非美股可不带行情摘要，继续使用原行为分析接口。
+- 该开发服务无身份认证、限流与公开行情再分发授权，不应直接暴露到公网。公开部署需由业务后端加入这些边界。
+
 ## 通用健康检查
 
 ### Request

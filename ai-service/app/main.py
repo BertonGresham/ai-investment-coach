@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.prompts import SYSTEM_PROMPT, build_analysis_payload, build_user_prompt
 from app.rag import retrieve_theory
+from app.market_context import router as market_context_router
 from app.schemas import (
     InvestmentProfileResponse,
     ProfilePattern,
@@ -58,6 +59,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+app.include_router(market_context_router)
 
 
 @app.get("/health")

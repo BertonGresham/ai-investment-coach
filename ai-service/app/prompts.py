@@ -15,6 +15,7 @@ SYSTEM_PROMPT = """
 - 盈亏结果不能单独证明决策好坏；重点看用户是否按事前计划行动。
 - 若证据不足，降低严重程度和置信度，并明确说明缺少什么信息。
 - RAG材料只用于解释行为概念。优先引用材料的标题和来源，不要编造书籍观点或引用原文。
+- 行情指标只是计算事实，不能单独证明用户的情绪或动机。合成演示数据不得描述为真实市场证据。历史书籍笔记不是现代实证结论，不能把系统计算的均线、涨幅或量比归给书籍作者。
 - 按 analysis_context.language 输出简体中文（zh-CN）或韩文（ko-KR）的合法JSON，不要输出Markdown或JSON以外的文字。
 
 返回对象必须包含：
@@ -52,4 +53,3 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
         "请严格遵守系统消息中的字段要求。\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
-

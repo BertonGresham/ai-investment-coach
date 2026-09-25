@@ -63,7 +63,7 @@
       .ocr-status[data-state="success"] { color: var(--teal-dark); }
       .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 11px; }
       .field { min-width: 0; display: grid; gap: 6px; }
-      .field.wide { grid-column: 1 / -1; }
+      .form-grid > .wide { grid-column: 1 / -1; }
       label { color: #405550; font-size: 12px; font-weight: 700; }
       input, select, textarea { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #d7e1de; border-radius: 5px; padding: 8px 10px; color: var(--ink); background: #fff; outline: none; }
       input:focus, select:focus, textarea:focus { border-color: #57988b; box-shadow: 0 0 0 2px #e2f1ed; }
@@ -146,6 +146,25 @@
         .form-footer { align-items: flex-start; flex-direction: column; }
         .pnl-inline { white-space: normal; }
       }
+      .market-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; border-top: 1px solid #d9e2df; padding-top: 15px; }
+      .market-switch { display: flex; align-items: center; gap: 7px; width: 100%; }
+      .market-switch input { width: 17px; height: 17px; min-height: 0; accent-color: #167b67; }
+      .market-switch label { margin: 0; }
+      .market-source { flex: 1; min-width: 180px; }
+      .market-source select { width: 100%; }
+      .market-status { white-space: pre-line; font-size: 13px; margin: 0; color: #536560; }
+      .market-status[data-error="true"] { color: #a12c3e; }
+      .market-facts { min-width: 0; border-top: 1px solid #d9e2df; padding: 16px 20px; overflow-wrap: anywhere; font-size: 13px; }
+      .market-facts h3 { font-size: 14px; margin: 6px 0; }
+      .market-facts p { line-height: 1.65; margin: 6px 0; }
+      .market-facts a { color: #126b59; font-size: 12px; }
+      .market-provenance { font-weight: 600; color: #42554e; }
+      .market-metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; margin: 14px 0 22px; }
+      .market-metrics dt { color: #536560; }
+      .market-metrics dd { margin: 0; font-variant-numeric: tabular-nums; }
+      .book-note { padding: 12px 0; border-bottom: 1px solid #e4eae7; }
+      .book-question { color: #165f50; }
+      #klineSummary[readonly] { background: #f3f6f5; color: #4a5b55; min-height: 118px; }
     </style>
   </head>
   <body>
@@ -206,7 +225,14 @@
               <div class="field"><label for="buyReasonType">买入理由类型</label><select id="buyReasonType" name="buyReasonType"><option value="fear_of_missing_out">害怕错过 / 追涨</option><option value="plan">按计划执行</option><option value="technical_signal">技术信号</option><option value="news">消息影响</option><option value="other">其他</option></select></div>
               <div class="field"><label for="sellReason">卖出理由</label><input id="sellReason" name="sellReason" value="下跌后害怕继续亏损，所以卖出" maxlength="1000" /></div>
               <div class="field wide"><label for="buyReason">买入理由</label><textarea id="buyReason" name="buyReason" required maxlength="1000">看到价格快速上涨，担心错过机会，所以买入</textarea></div>
-              <div class="field wide"><label for="klineSummary">K 线摘要</label><textarea id="klineSummary" name="klineSummary" maxlength="2000">买入前连续3根阳线，买入后出现长上影线，随后回落</textarea><span class="field-hint">只作为当时决策背景，不用于推测股票未来走势。</span></div>
+              <div class="field wide"><span id="timeZoneHint" class="field-hint"></span></div>
+              <div class="wide market-tools">
+                <div class="market-switch"><input id="autoMarket" type="checkbox" checked /><label id="autoMarketLabel" for="autoMarket">自动获取买入前日 K</label></div>
+                <div class="field market-source"><label id="marketSourceLabel" for="marketSource">行情来源</label><select id="marketSource"><option value="yahoo">真实历史行情 · Yahoo</option><option value="demo">合成演示数据</option></select></div>
+                <button id="fetchMarket" class="button" type="button">获取行情背景</button>
+              </div>
+              <p id="marketStatus" class="wide market-status" role="status" aria-live="polite" hidden></p>
+              <div class="field wide"><label for="klineSummary">买入前行情摘要</label><textarea id="klineSummary" name="klineSummary" maxlength="2000" readonly></textarea><span id="klineHint" class="field-hint">仅取买入日期之前的日 K。</span></div>
             </div>
             <div class="form-footer">
               <div class="button-row"><button class="button primary" id="analyzeButton" type="submit">分析这笔交易</button><button class="button" id="sampleButton" type="button">载入演示案例</button></div>
@@ -221,6 +247,7 @@
           <div id="resultBody" class="result-body">
             <div class="empty-state"><div class="empty-mark" aria-hidden="true">↗</div><p class="empty-title">等待一笔交易记录</p><p class="empty-copy">提交后查看行为问题、行为标签、复盘建议和判断边界。演示数据只保存在当前页面内存中。</p></div>
           </div>
+          <section id="marketFacts" class="market-facts" aria-live="polite" hidden></section>
         </section>
       </section>
 
@@ -231,6 +258,7 @@
       <div class="privacy-line">仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。</div>
     </main>
 
+    <script src="market-context.js"></script>
     <script>
       const byId = (id) => document.getElementById(id);
       const translations = {
@@ -269,6 +297,7 @@
       let lastProfileSource = "local";
       let serviceAnalysisMode = "unknown";
       let demoSampleActive = false;
+      let reviewMarket = null;
 
       function applyLanguage() {
         const copy = translations[language];
@@ -315,6 +344,7 @@
         if (lastProfile) renderProfile(lastProfile, lastProfileSource);
         else if (byId("profileBody").classList.contains("profile-empty")) byId("profileBody").textContent = copy.emptyProfile;
         updatePnl();
+        reviewMarket?.localize();
       }
 
       byId("languageToggle").addEventListener("click", () => {
@@ -364,7 +394,8 @@
         const sample = sampleCopy(language);
         byId("buyReason").value = sample.buyReason;
         byId("sellReason").value = sample.sellReason;
-        byId("klineSummary").value = sample.klineSummary;
+        byId("klineSummary").value = "";
+        reviewMarket?.useDemo();
         byId("ocrStatus").hidden = true;
         byId("ocrStatus").textContent = "";
         demoSampleActive = true;
@@ -453,6 +484,7 @@
       }
       function applyRecognizedFields(fields, confidence, warnings, notice) {
         demoSampleActive = false;
+        reviewMarket?.useLive();
         const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
         inputs.forEach((id) => { byId(id).value = ""; });
         byId("buyReason").value = fields.buy_reason || "";
@@ -603,9 +635,8 @@
             sell_reason: byId("sellReason").value.trim() || null,
             planned_holding_period: language === "ko-KR" ? "당일 단타" : "当日短线",
           },
-          market_snapshot: { kline_summary: byId("klineSummary").value.trim() || null },
           analysis_context: { language, risk_notice_required: true },
-          rag_context: [],
+          ...reviewMarket.requestFields(),
         };
       }
 
@@ -704,6 +735,8 @@
         button.disabled = true;
         button.textContent = tr("analyzing");
         try {
+          buildRequest();
+          await reviewMarket.ensure();
           const request = buildRequest();
           const response = await submitToService("/analyze-trade", request);
           if (response && serviceAnalysisMode === "unknown") await checkService();
@@ -711,7 +744,7 @@
           currentAnalysis = response || makeLocalAnalysis(request);
           currentAnalysisMode = mode;
           currentAnalysisInput = request;
-          currentAnalysisLanguage = language;
+          currentAnalysisLanguage = request.analysis_context.language;
           history.unshift(currentAnalysis);
           if (history.length > 100) history.pop();
           lastProfile = null;
@@ -821,6 +854,8 @@
         byId("profileView").style.display = profileSelected ? "block" : "none";
         if (profileSelected && lastProfile) renderProfile(lastProfile, lastProfileSource);
       }));
+      reviewMarket = createMarketContext({ getLanguage: () => language, getApiBase: apiBase });
+      reviewMarket.useDemo();
       applyLanguage();
       updatePnl();
     </script>
