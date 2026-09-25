@@ -153,6 +153,9 @@ class MarketAdapterTests(unittest.TestCase):
     @patch("yfinance.set_tz_cache_location")
     @patch("yfinance.Ticker")
     def test_real_adapter_excludes_current_day_and_disables_adjustment(self, ticker, cache):
+        import yfinance as yf
+        self.addCleanup(setattr, yf.config.debug, "hide_exceptions", yf.config.debug.hide_exceptions)
+        yf.config.debug.hide_exceptions = True
         ticker.return_value.history.return_value = self.frame()
         ticker.return_value.history_metadata = {"currency": "USD", "exchangeTimezoneName": "America/New_York", "instrumentType": "EQUITY"}
         result = fetch_yahoo_bars("AAPL", date(2025, 7, 25))
@@ -160,6 +163,7 @@ class MarketAdapterTests(unittest.TestCase):
         args = ticker.return_value.history.call_args.kwargs
         self.assertFalse(args["auto_adjust"])
         self.assertEqual(args["end"], "2025-07-25")
+        self.assertFalse(yf.config.debug.hide_exceptions)
 
     @patch("yfinance.set_tz_cache_location")
     @patch("yfinance.Ticker")

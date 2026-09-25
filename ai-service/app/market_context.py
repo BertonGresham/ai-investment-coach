@@ -114,6 +114,8 @@ def fetch_yahoo_bars(symbol: str, cutoff: date) -> list[DailyBar]:
     import yfinance as yf
 
     yf.set_tz_cache_location(str(ROOT / ".market-cache"))
+    # yfinance otherwise swallows provider failures and returns an empty frame.
+    yf.config.debug.hide_exceptions = False
     ticker = yf.Ticker(symbol)
     try:
         frame = ticker.history(
