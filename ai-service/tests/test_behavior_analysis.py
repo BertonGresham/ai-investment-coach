@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from openai import OpenAI
 from pydantic import ValidationError
 from fastapi import HTTPException
 
@@ -49,6 +50,11 @@ def trade_analysis(trade_id: str, trade_time: str) -> TradeAnalysisResponse:
 
 
 class BehaviorAnalysisTests(unittest.TestCase):
+    def test_llm_client_initializes_with_installed_dependencies(self) -> None:
+        # Initialization must work before any real API key or network request.
+        with OpenAI(api_key="local-test-not-a-real-key", max_retries=0) as client:
+            self.assertIsNotNone(client.chat.completions)
+
     def test_mock_analysis_uses_buy_and_sell_reason_evidence(self) -> None:
         request = TradeAnalysisRequest(
             user_id="user-1",
@@ -237,4 +243,3 @@ class BehaviorAnalysisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

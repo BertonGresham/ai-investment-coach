@@ -73,7 +73,7 @@ class MarketSnapshot(StrictModel):
 
 
 class AnalysisContext(StrictModel):
-    language: str = Field(default="zh-CN", max_length=16)
+    language: Literal["zh-CN", "ko-KR"] = "zh-CN"
     analysis_goal: str = Field(
         default="Analyze investment decision behavior, not future stock direction.",
         max_length=300,
@@ -230,4 +230,3 @@ def _parse_iso_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
-

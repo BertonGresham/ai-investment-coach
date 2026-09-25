@@ -493,6 +493,8 @@
           const result = await response.json();
           if (result.status === "mock") {
             setOcrStatus(`${tr("mockOcr")}\n${(result.warnings || []).join("\n")}`, "error");
+          } else if (!Object.values(result.fields || {}).some((value) => value != null && value !== "")) {
+            setOcrStatus([tr("noFields"), result.notice, ...(result.warnings || [])].filter(Boolean).join("\n"), "error");
           } else {
             applyRecognizedFields(result.fields || {}, result.field_confidence || {}, result.warnings || [], result.notice || "");
           }
@@ -505,11 +507,15 @@
       });
 
       function updatePnl() {
+        if (["buyPrice", "sellPrice", "quantity"].some((id) => !byId(id).value.trim())) {
+          byId("pnlPreview").textContent = "";
+          return;
+        }
         const buy = Number(byId("buyPrice").value);
         const sell = Number(byId("sellPrice").value);
         const quantity = Number(byId("quantity").value);
         const pnl = (sell - buy) * quantity;
-        if (Number.isFinite(pnl) && Number.isFinite(buy) && buy > 0 && Number.isFinite(quantity) && quantity > 0) {
+        if (Number.isFinite(pnl) && buy > 0 && sell > 0 && Number.isInteger(quantity) && quantity > 0) {
           const sign = pnl > 0 ? "+" : "";
           byId("pnlPreview").textContent = `${tr("pnlPrefix")} ${sign}${pnl.toFixed(2)} · ${(100 * (sell - buy) / buy).toFixed(2)}${tr("pnlPercentSuffix")}`;
         } else {
@@ -820,4 +826,3 @@
     </script>
   </body>
 </html>
-

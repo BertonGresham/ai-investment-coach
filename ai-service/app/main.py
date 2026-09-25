@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -141,7 +142,9 @@ async def recognize_trade_screenshot(
             status_code=503,
             detail="LLM mode is enabled but OPENAI_API_KEY is not configured.",
         )
-    return llm_screenshot_recognition(data, content_type, language, api_key)
+    return await run_in_threadpool(
+        llm_screenshot_recognition, data, content_type, language, api_key
+    )
 
 
 def mock_screenshot_recognition(language: str) -> ScreenshotRecognitionResponse:
@@ -181,27 +184,29 @@ def llm_screenshot_recognition(
     )
     data_url = f"data:{content_type};base64,{base64.b64encode(data).decode('ascii')}"
     try:
-        client = OpenAI(api_key=api_key, timeout=45.0, max_retries=1)
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract the visible trade fields. Do not analyze the investment decision yet."},
-                        {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
-                    ],
-                },
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=900,
-        )
+        with OpenAI(api_key=api_key, timeout=45.0, max_retries=1) as client:
+            response = client.chat.completions.create(
+                model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract the visible trade fields. Do not analyze the investment decision yet."},
+                            {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
+                        ],
+                    },
+                ],
+                response_format={"type": "json_object"},
+                temperature=0,
+                max_tokens=900,
+            )
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The vision model returned an empty response.")
         raw = json.loads(content)
+        if not isinstance(raw, dict):
+            raise ValueError("The vision model response must be a JSON object.")
         raw_fields = raw.get("fields", {})
         if not isinstance(raw_fields, dict):
             raise ValueError("The vision model returned invalid fields.")
@@ -232,7 +237,7 @@ def llm_screenshot_recognition(
         has_fields = any(value is not None for value in fields.model_dump().values())
         if not has_fields:
             warnings.append("명확한 거래 정보를 찾지 못했습니다." if korean else "未能识别出明确的交易字段。")
-        return ScreenshotRecognitionResponse(
+        result = ScreenshotRecognitionResponse(
             status="recognized" if has_fields else "needs_review",
             fields=fields,
             field_confidence=confidence,
@@ -243,6 +248,13 @@ def llm_screenshot_recognition(
                 else "截图仅用于提取可见交易字段；请核对后再分析。买卖理由不会根据盈亏或图表推测。"
             ),
         )
+        # Scores must not claim that absent or discarded fields were recognized.
+        result.field_confidence = {
+            key: value
+            for key, value in result.field_confidence.items()
+            if fields.model_dump().get(key) is not None
+        }
+        return result
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         logger.exception("The vision model returned invalid extracted trade fields.")
         raise HTTPException(status_code=502, detail="The image could not be read reliably. Please retry or enter the trade manually.") from exc
@@ -269,21 +281,21 @@ def llm_behavior_analysis(
     retrieved = retrieve_theory(query)
     payload = build_analysis_payload(req, retrieved)
     try:
-        client = OpenAI(
+        with OpenAI(
             api_key=api_key,
             timeout=30.0,
             max_retries=2,
-        )
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_user_prompt(payload)},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.2,
-            max_tokens=1_500,
-        )
+        ) as client:
+            response = client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": build_user_prompt(payload)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                max_tokens=1_500,
+            )
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The model returned an empty response.")
@@ -557,4 +569,3 @@ def _normalize_datetime(value: datetime) -> datetime:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
-
