@@ -203,6 +203,8 @@ def llm_screenshot_recognition(
                 temperature=0,
                 max_tokens=900,
             )
+        if response.choices[0].finish_reason != "stop":
+            raise ValueError("The vision model response was not completed.")
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The vision model returned an empty response.")
@@ -258,10 +260,10 @@ def llm_screenshot_recognition(
         }
         return result
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
-        logger.exception("The vision model returned invalid extracted trade fields.")
+        logger.error("The vision model returned invalid extracted trade fields (%s).", type(exc).__name__)
         raise HTTPException(status_code=502, detail="The image could not be read reliably. Please retry or enter the trade manually.") from exc
     except Exception as exc:
-        logger.exception("Screenshot recognition request failed.")
+        logger.error("Screenshot recognition request failed (%s).", type(exc).__name__)
         raise HTTPException(status_code=502, detail="The vision provider is temporarily unavailable. Please retry.") from exc
 
 
@@ -298,6 +300,8 @@ def llm_behavior_analysis(
                 temperature=0.2,
                 max_tokens=1_500,
             )
+        if response.choices[0].finish_reason != "stop":
+            raise ValueError("The model response was not completed.")
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The model returned an empty response.")
@@ -310,13 +314,13 @@ def llm_behavior_analysis(
         _keep_supported_theory_references(raw_result, [*req.rag_context, *retrieved])
         return TradeAnalysisResponse.model_validate(raw_result)
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
-        logger.exception("The model returned an invalid analysis payload.")
+        logger.error("The model returned an invalid analysis payload (%s).", type(exc).__name__)
         raise HTTPException(
             status_code=502,
             detail="The AI service could not produce a valid analysis. Please retry.",
         ) from exc
     except Exception as exc:
-        logger.exception("LLM analysis request failed.")
+        logger.error("LLM analysis request failed (%s).", type(exc).__name__)
         raise HTTPException(
             status_code=502,
             detail="The AI provider is temporarily unavailable. Please retry.",
@@ -571,3 +575,4 @@ def _normalize_datetime(value: datetime) -> datetime:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
+

@@ -33,7 +33,7 @@ class ProviderContractTests(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
-    def provider(self, content=None, status=200, timeout=False):
+    def provider(self, content=None, status=200, timeout=False, finish_reason="stop"):
         self.requests = []
 
         def handle(request):
@@ -44,7 +44,7 @@ class ProviderContractTests(unittest.TestCase):
                 return httpx.Response(status, json={"error": {"message": "private-provider-detail", "type": "api_error"}})
             return httpx.Response(200, json={
                 "id": "offline-response", "object": "chat.completion", "created": 0,
-                "model": "offline-model", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}],
+                "model": "offline-model", "choices": [{"index": 0, "finish_reason": finish_reason, "message": {"role": "assistant", "content": content}}],
             })
 
         sdk = OpenAI(api_key="local-test-not-a-real-key", max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handle)))
@@ -104,6 +104,31 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "needs_review")
         self.assertTrue(all(value is None for value in response.json()["fields"].values()))
 
+    def test_blank_fields_are_not_successful_recognition(self):
+        self.provider(json.dumps({"fields": {"symbol": "  ", "buy_reason": ""}, "field_confidence": {"symbol": 0.99}}))
+        response = self.upload()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "needs_review")
+        self.assertEqual(response.json()["field_confidence"], {})
+
+    def test_incomplete_provider_output_is_rejected_even_when_json_is_valid(self):
+        for reason in ("length", "content_filter"):
+            for endpoint in ("trade", "vision"):
+                with self.subTest(reason=reason, endpoint=endpoint):
+                    result = {"fields": {"symbol": "AAPL"}} if endpoint == "vision" else mock_behavior_analysis(TradeAnalysisRequest.model_validate(example())).model_dump()
+                    self.provider(json.dumps(result), finish_reason=reason)
+                    with self.assertLogs("app.main", level="ERROR"):
+                        response = self.upload() if endpoint == "vision" else self.client.post("/analyze-trade", json=example())
+                    self.assertEqual(response.status_code, 502)
+
+    def test_validation_logs_do_not_contain_extracted_private_data(self):
+        self.provider(json.dumps({"fields": {"buy_price": "private-account-123456"}}))
+        with self.assertLogs("app.main", level="ERROR") as logs:
+            response = self.upload()
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("private-account-123456", "\n".join(logs.output))
+        self.assertNotIn("private-account-123456", response.text)
+
     def test_invalid_model_output_is_502_not_success_or_mock(self):
         for content in (None, "not JSON", "[]", "{}"):
             for endpoint in ("trade", "vision"):
@@ -131,11 +156,12 @@ class ProviderContractTests(unittest.TestCase):
             for endpoint in ("trade", "vision"):
                 with self.subTest(status=status, timeout=timeout, endpoint=endpoint):
                     sdk = self.provider(status=status, timeout=timeout)
-                    with self.assertLogs("app.main", level="ERROR"):
+                    with self.assertLogs("app.main", level="ERROR") as logs:
                         response = self.upload() if endpoint == "vision" else self.client.post("/analyze-trade", json=example())
                     self.assertEqual(response.status_code, 502)
                     self.assertNotIn("private-provider-detail", response.text)
                     self.assertNotIn("local-test-not-a-real-key", response.text)
+                    self.assertNotIn("private-provider-detail", "\n".join(logs.output))
                     self.assertTrue(sdk.is_closed())
 
     def test_missing_key_never_calls_provider(self):
@@ -182,3 +208,4 @@ class ScreenshotConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

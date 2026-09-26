@@ -193,6 +193,13 @@ class ScreenshotTradeFields(StrictModel):
     buy_reason: str | None = Field(default=None, max_length=1_000)
     sell_reason: str | None = Field(default=None, max_length=1_000)
 
+    @field_validator("symbol", "market", "buy_time", "sell_time", "buy_reason", "sell_reason", mode="before")
+    @classmethod
+    def normalize_empty_fields(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
     @field_validator("buy_time", "sell_time")
     @classmethod
     def validate_optional_time(cls, value: str | None) -> str | None:
@@ -230,3 +237,4 @@ def _parse_iso_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+

@@ -61,6 +61,15 @@
       .ocr-status { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
       .ocr-status[data-state="error"] { color: var(--red); }
       .ocr-status[data-state="success"] { color: var(--teal-dark); }
+      .ocr-review { margin: 14px 0; border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
+      .ocr-review h3 { margin: 0 0 8px; font-size: 13px; }
+      .ocr-review table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+      .ocr-review th, .ocr-review td { text-align: left; vertical-align: top; overflow-wrap: anywhere; padding: 8px 5px; border-bottom: 1px solid var(--line); font-weight: 400; }
+      .ocr-review th:first-child { width: 27%; }
+      .ocr-review th:last-child { width: 25%; }
+      .ocr-review thead th { color: var(--muted); font-weight: 700; }
+      .ocr-review tr[data-review="true"] { background: var(--amber-pale); }
+      .ocr-review .button { height: auto; padding: 8px 12px; }
       .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 11px; }
       .field { min-width: 0; display: grid; gap: 6px; }
       .form-grid > .wide { grid-column: 1 / -1; }
@@ -205,21 +214,27 @@
               <div class="upload-row">
                 <input id="screenshotFile" class="upload-input" type="file" accept="image/png,image/jpeg,image/webp" />
                 <label id="chooseScreenshot" class="button" for="screenshotFile">选择图片</label>
-                <button id="recognizeScreenshot" class="button" type="button" disabled>识别并填入</button>
+                <button id="recognizeScreenshot" class="button" type="button" disabled>识别截图</button>
                 <span class="field-hint" data-i18n="uploadHint">PNG、JPG 或 WebP，最大 8 MB。识别后请先核对。</span>
               </div>
               <div id="uploadPreview" class="upload-preview" hidden>
                 <img id="screenshotPreview" alt="" />
-                <div id="uploadMeta" class="upload-meta"></div>
+                <div><div id="uploadMeta" class="upload-meta"></div><button id="removeScreenshot" class="button" type="button">移除图片</button></div>
               </div>
               <p id="ocrStatus" class="ocr-status" role="status" aria-live="polite" hidden></p>
+              <section id="screenshotReview" class="ocr-review" aria-labelledby="screenshotReviewTitle" hidden>
+                <h3 id="screenshotReviewTitle">待核对的识别结果</h3>
+                <table><thead><tr id="screenshotReviewHead"></tr></thead><tbody id="screenshotReviewRows"></tbody></table>
+                <div id="screenshotReviewWarnings" class="field-hint"></div>
+                <div class="button-row"><button id="confirmScreenshot" class="button primary" type="button">确认并替换表单</button><button id="cancelScreenshot" class="button" type="button">取消</button></div>
+              </section>
             </div>
             <div class="form-grid">
               <div class="field"><label for="market">市场</label><select id="market" name="market"><option value="US">美国</option><option value="KR">韩国</option><option value="CN">中国</option><option value="OTHER">其他</option></select></div>
               <div class="field"><label for="symbol">股票代码</label><input id="symbol" name="symbol" value="AAPL" maxlength="24" /></div>
               <div class="field"><label for="quantity">股数</label><input id="quantity" name="quantity" type="number" min="1" step="1" value="10" required /></div>
-              <div class="field"><label for="buyTime">买入时间</label><input id="buyTime" name="buyTime" type="datetime-local" required /></div>
-              <div class="field"><label for="sellTime">卖出时间</label><input id="sellTime" name="sellTime" type="datetime-local" /></div>
+              <div class="field"><label for="buyTime">买入时间</label><input id="buyTime" name="buyTime" type="datetime-local" step="1" required /></div>
+              <div class="field"><label for="sellTime">卖出时间</label><input id="sellTime" name="sellTime" type="datetime-local" step="1" /></div>
               <div class="field"><label for="buyPrice">买入价格</label><input id="buyPrice" name="buyPrice" type="number" min="0.0001" step="any" value="218.5" required /></div>
               <div class="field"><label for="sellPrice">卖出价格</label><input id="sellPrice" name="sellPrice" type="number" min="0.0001" step="any" value="213.2" /></div>
               <div class="field"><label for="buyReasonType">买入理由类型</label><select id="buyReasonType" name="buyReasonType"><option value="fear_of_missing_out">害怕错过 / 追涨</option><option value="plan">按计划执行</option><option value="technical_signal">技术信号</option><option value="news">消息影响</option><option value="other">其他</option></select></div>
@@ -259,6 +274,7 @@
     </main>
 
     <script src="market-context.js"></script>
+    <script src="screenshot-review.js"></script>
     <script>
       const byId = (id) => document.getElementById(id);
       const translations = {
@@ -267,7 +283,7 @@
           brand: "AI 投资教练", brandCaption: "投资决策行为复盘", checking: "检查服务中", connectedMock: "服务已连接 · Mock", connectedLlm: "服务已连接 · LLM", connected: "AI 服务已连接", offline: "本地演示模式",
           apiLabel: "AI 服务地址", apiPlaceholder: "AI 服务地址", eyebrow: "AI INVESTMENT COACH / 复盘工作台", pageTitle: "看清决策，不预测涨跌", pageSubtitle: "把一笔交易拆解成可观察的行为线索，再从重复记录中认识自己的决策习惯。",
           tradeTab: "单笔复盘", profileTab: "行为画像", tradeHeading: "交易记录", tradeSubtitle: "记录当时的理由与市场背景，盈亏本身不代表决策质量。", resultHeading: "行为复盘", resultSubtitle: "证据、解释与不确定性分开呈现。",
-          screenshotLabel: "券商交易截图", chooseScreenshot: "选择图片", recognizeScreenshot: "识别并填入", uploadHint: "PNG、JPG 或 WebP，最大 8 MB。图片会发送到当前配置的视觉模型识别；本演示不会保存上传文件。", uploadNoFile: "尚未选择图片。", removeImage: "移除图片", recognizing: "正在识别截图…", noOcrService: "无法连接 AI 服务。请启动后端视觉识别 API。", mockOcr: "当前后端处于 Mock 模式，没有执行真实图片识别。配置视觉模型后即可识别。", ocrFilled: "识别结果已填入表单，请核对高亮/置信度较低的字段，并补充买卖理由后再分析。", ocrFailed: "截图识别失败。请检查服务连接，或手动填写交易信息。", fileTooLarge: "图片超过 8 MB，请选择较小的图片。", invalidImage: "请选择 PNG、JPG 或 WebP 图片。", confidence: "字段置信度", noFields: "未识别出可用交易字段。请手动填写。", market: "市场", markets: ["美国", "韩国", "中国", "其他"], labels: { market: "市场", symbol: "股票代码", quantity: "股数", buyTime: "买入时间", sellTime: "卖出时间", buyPrice: "买入价格", sellPrice: "卖出价格", buyReasonType: "买入理由类型", sellReason: "卖出理由", buyReason: "买入理由", klineSummary: "K 线摘要" },
+          screenshotLabel: "券商交易截图", chooseScreenshot: "选择图片", recognizeScreenshot: "识别截图", uploadHint: "PNG、JPG 或 WebP，最大 8 MB。选择后先在本机预览；点击识别时才发送到当前配置的视觉模型。本演示不保存图片。", uploadNoFile: "尚未选择图片。", removeImage: "移除图片", recognizing: "正在识别截图…", noOcrService: "无法连接 AI 服务。请启动后端视觉识别 API。", mockOcr: "当前后端处于 Mock 模式，没有执行真实图片识别。配置视觉模型后即可识别。", ocrFilled: "", ocrFailed: "截图识别失败。请检查服务连接，或手动填写交易信息。", fileTooLarge: "图片超过 8 MB，请选择较小的图片。", invalidImage: "请选择 PNG、JPG 或 WebP 图片。", confidence: "字段置信度", noFields: "未识别出可用交易字段。请手动填写。", market: "市场", markets: ["美国", "韩国", "中国", "其他"], labels: { market: "市场", symbol: "股票代码", quantity: "股数", buyTime: "买入时间", sellTime: "卖出时间", buyPrice: "买入价格", sellPrice: "卖出价格", buyReasonType: "买入理由类型", sellReason: "卖出理由", buyReason: "买入理由", klineSummary: "K 线摘要" },
           reasonTypes: ["害怕错过 / 追涨", "按计划执行", "技术信号", "消息影响", "其他"], klineHint: "只作为当时决策背景，不用于推测股票未来走势。", analyze: "分析这笔交易", analyzing: "分析中…", sample: "载入演示案例", pnlPrefix: "未计手续费盈亏", pnlPercentSuffix: "%", waitingTitle: "等待一笔交易记录", waitingCopy: "提交后查看行为问题、行为标签、复盘建议和判断边界。演示数据只保存在当前页面内存中。",
           emptyProfile: "完成至少一笔交易复盘后，这里会显示近 7 天、30 天和 90 天的观察结果。", profileToolbar: "按买入时间统计近期重复出现的行为线索。", refreshProfile: "更新行为画像", privacy: "仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。", formMissingReason: "请填写买入理由。", formBuyTime: "请填写有效的买入时间。", formBuyPrice: "买入价格必须大于 0。", formQuantity: "股数必须是正整数。", formSellPair: "卖出时间和卖出价格需要同时填写，或同时留空。", formSellTime: "卖出时间不能早于买入时间。", formSellPrice: "卖出价格必须大于 0。", apiError: "AI 服务返回错误：", analyzeFailed: "分析失败，请检查输入。", profileNeeded: "先完成一笔交易复盘，再生成行为画像。", profileFailed: "画像生成失败。",
           resultTitle: "行为复盘结果", resultLanguageMismatch: "已有分析正文仍为韩语；点击“分析这笔交易”可按当前语言重新生成。", evidence: "观察到的线索", tags: "本次行为标签", noTags: "暂未形成明确标签。", advice: "复盘建议", questions: "复盘问题", uncertainty: "判断边界", fewSamples: "样本较少", someSamples: "样本一般", manySamples: "样本较多", severity: { high: "较明显", medium: "留意", low: "线索" }, basis: "依据：", theory: "理论参考：", confidenceSuffix: "% 线索强度", profileDays: " 天观察", countUnit: " 笔 · ", confidenceLevels: { low: "样本较少", medium: "样本一般", high: "样本较多" }, patterns: "常见行为标签", recurring: "重复出现的问题", sampleUnit: " 笔", recentNoSamples: "最近{days}天没有可用交易样本。", fewProfile: "最近{days}天有{count}笔样本，样本较少，暂不判断稳定行为模式。", profileHasTags: "最近{days}天有{count}笔样本；较常出现的标签是{tags}。", profileNoTags: "最近{days}天有{count}笔样本，暂未出现重复的行为标签。", localData: "本地演示数据", aiProfile: "AI 服务画像", profileAsOf: "统计截至", profileLimit: "样本较少时，标签只代表待观察的倾向，不是心理诊断。", ocrReasonNotGuessed: "买卖理由不会由盈亏或图表推测。",
@@ -277,7 +293,7 @@
           brand: "AI 투자 코치", brandCaption: "투자 의사결정 행동 복기", checking: "서비스 확인 중", connectedMock: "서비스 연결됨 · Mock", connectedLlm: "서비스 연결됨 · LLM", connected: "AI 서비스 연결됨", offline: "로컬 데모 모드",
           apiLabel: "AI 서비스 주소", apiPlaceholder: "AI 서비스 주소", eyebrow: "AI INVESTMENT COACH / 거래 복기", pageTitle: "결정을 살펴보고, 주가를 예측하지 않습니다", pageSubtitle: "한 번의 거래에서 행동 단서를 살펴보고, 반복 기록을 통해 의사결정 습관을 알아봅니다.",
           tradeTab: "거래 복기", profileTab: "행동 프로필", tradeHeading: "거래 기록", tradeSubtitle: "당시의 이유와 시장 배경을 기록하세요. 손익만으로 의사결정의 질을 판단할 수는 없습니다.", resultHeading: "행동 복기", resultSubtitle: "근거, 해석, 불확실성을 나누어 보여줍니다.",
-          screenshotLabel: "증권사 거래 스크린샷", chooseScreenshot: "이미지 선택", recognizeScreenshot: "인식 후 입력", uploadHint: "PNG, JPG, WebP, 최대 8MB. 이미지는 설정된 비전 모델로 전송되며 이 데모는 업로드 파일을 저장하지 않습니다.", uploadNoFile: "선택된 이미지가 없습니다.", removeImage: "이미지 제거", recognizing: "스크린샷을 인식하는 중…", noOcrService: "AI 서비스에 연결할 수 없습니다. 백엔드 비전 인식 API를 시작하세요.", mockOcr: "백엔드가 Mock 모드라 실제 이미지 인식은 수행되지 않았습니다. 비전 모델을 설정하면 인식할 수 있습니다.", ocrFilled: "인식 결과를 입력란에 채웠습니다. 신뢰도가 낮은 항목을 확인하고 매매 이유를 보완한 뒤 분석하세요.", ocrFailed: "스크린샷 인식에 실패했습니다. 서비스를 확인하거나 거래 정보를 직접 입력하세요.", fileTooLarge: "이미지가 8MB를 초과합니다. 더 작은 이미지를 선택하세요.", invalidImage: "PNG, JPG 또는 WebP 이미지를 선택하세요.", confidence: "항목 신뢰도", noFields: "거래 정보를 인식하지 못했습니다. 직접 입력해 주세요.", market: "시장", markets: ["미국", "한국", "중국", "기타"], labels: { market: "시장", symbol: "종목 코드", quantity: "수량", buyTime: "매수 시간", sellTime: "매도 시간", buyPrice: "매수 가격", sellPrice: "매도 가격", buyReasonType: "매수 이유 유형", sellReason: "매도 이유", buyReason: "매수 이유", klineSummary: "캔들 차트 요약" },
+          screenshotLabel: "증권사 거래 스크린샷", chooseScreenshot: "이미지 선택", recognizeScreenshot: "스크린샷 인식", uploadHint: "PNG, JPG, WebP, 최대 8MB. 선택 후 기기에서 미리 볼 수 있으며, 인식 버튼을 눌러야 설정한 비전 모델로 전송됩니다. 이 데모는 이미지를 저장하지 않습니다.", uploadNoFile: "선택된 이미지가 없습니다.", removeImage: "이미지 제거", recognizing: "스크린샷을 인식하는 중…", noOcrService: "AI 서비스에 연결할 수 없습니다. 백엔드 비전 인식 API를 시작하세요.", mockOcr: "백엔드가 Mock 모드라 실제 이미지 인식은 수행되지 않았습니다. 비전 모델을 설정하면 인식할 수 있습니다.", ocrFilled: "", ocrFailed: "스크린샷을 인식하지 못했습니다. 서비스를 확인하거나 거래 정보를 직접 입력하세요.", fileTooLarge: "이미지가 8MB를 초과합니다. 더 작은 이미지를 선택하세요.", invalidImage: "PNG, JPG 또는 WebP 이미지를 선택하세요.", confidence: "항목 신뢰도", noFields: "거래 정보를 인식하지 못했습니다. 직접 입력해 주세요.", market: "시장", markets: ["미국", "한국", "중국", "기타"], labels: { market: "시장", symbol: "종목 코드", quantity: "수량", buyTime: "매수 시간", sellTime: "매도 시간", buyPrice: "매수 가격", sellPrice: "매도 가격", buyReasonType: "매수 이유 유형", sellReason: "매도 이유", buyReason: "매수 이유", klineSummary: "캔들 차트 요약" },
           reasonTypes: ["놓칠까 봐 매수 / 추격 매수", "계획에 따른 실행", "기술적 신호", "뉴스 영향", "기타"], klineHint: "당시 의사결정의 배경으로만 사용하며 주가의 미래를 예측하지 않습니다.", analyze: "이 거래 분석", analyzing: "분석 중…", sample: "데모 사례 불러오기", pnlPrefix: "수수료 제외 손익", pnlPercentSuffix: "%", waitingTitle: "거래 기록을 기다리는 중", waitingCopy: "제출하면 행동 단서, 태그, 복기 제안과 판단의 한계를 확인할 수 있습니다. 데모 데이터는 현재 페이지 메모리에만 저장됩니다.",
           emptyProfile: "거래 복기를 한 건 이상 완료하면 최근 7일, 30일, 90일 관찰 결과가 표시됩니다.", profileToolbar: "매수 시간을 기준으로 최근 반복되는 행동 단서를 집계합니다.", refreshProfile: "행동 프로필 업데이트", privacy: "투자 행동 교육과 복기용이며 투자 조언이 아닙니다. 단일 거래로 지속적인 성향을 단정할 수 없습니다.", formMissingReason: "매수 이유를 입력하세요.", formBuyTime: "유효한 매수 시간을 입력하세요.", formBuyPrice: "매수 가격은 0보다 커야 합니다.", formQuantity: "수량은 양의 정수여야 합니다.", formSellPair: "매도 시간과 가격을 함께 입력하거나 둘 다 비워 두세요.", formSellTime: "매도 시간은 매수 시간보다 빠를 수 없습니다.", formSellPrice: "매도 가격은 0보다 커야 합니다.", apiError: "AI 서비스 오류: ", analyzeFailed: "분석에 실패했습니다. 입력 내용을 확인하세요.", profileNeeded: "먼저 거래 복기를 완료한 뒤 프로필을 생성하세요.", profileFailed: "프로필을 생성하지 못했습니다.",
           resultTitle: "행동 복기 결과", resultLanguageMismatch: "이전 분석 본문은 중국어로 생성되었습니다. 현재 언어로 다시 보려면 ‘이 거래 분석’을 누르세요.", evidence: "관찰된 단서", tags: "이번 거래 행동 태그", noTags: "명확한 태그가 아직 없습니다.", advice: "복기 제안", questions: "복기 질문", uncertainty: "판단의 한계", fewSamples: "표본 적음", someSamples: "표본 보통", manySamples: "표본 충분", severity: { high: "뚜렷함", medium: "주의", low: "단서" }, basis: "근거: ", theory: "이론 참고: ", confidenceSuffix: "% 단서 강도", profileDays: "일 관찰", countUnit: "건 · ", confidenceLevels: { low: "표본 적음", medium: "표본 보통", high: "표본 충분" }, patterns: "자주 나타난 행동 태그", recurring: "반복된 문제", sampleUnit: "건", recentNoSamples: "최근 {days}일간 분석 가능한 거래 표본이 없습니다.", fewProfile: "최근 {days}일간 표본 {count}건이 있습니다. 표본이 적어 안정적인 행동 패턴을 판단하지 않습니다.", profileHasTags: "최근 {days}일간 표본 {count}건이며, 자주 나타난 태그는 {tags}입니다.", profileNoTags: "최근 {days}일간 표본 {count}건이며, 반복되는 행동 태그는 아직 없습니다.", localData: "로컬 데모 데이터", aiProfile: "AI 서비스 프로필", profileAsOf: "집계 기준일", profileLimit: "표본이 적으면 태그는 관찰할 경향일 뿐이며 심리 진단이 아닙니다.", ocrReasonNotGuessed: "손익이나 차트로 매매 이유를 추측하지 않습니다.",
@@ -298,6 +314,7 @@
       let serviceAnalysisMode = "unknown";
       let demoSampleActive = false;
       let reviewMarket = null;
+      let screenshotReview = null;
 
       function applyLanguage() {
         const copy = translations[language];
@@ -318,6 +335,7 @@
         byId("screenshotFieldLabel").textContent = copy.screenshotLabel;
         byId("chooseScreenshot").textContent = copy.chooseScreenshot;
         byId("recognizeScreenshot").textContent = copy.recognizeScreenshot;
+        byId("removeScreenshot").textContent = copy.removeImage;
         if (byId("uploadMeta").querySelector("button")) byId("uploadMeta").querySelector("button").textContent = copy.removeImage;
         document.querySelector('[data-i18n="uploadHint"]').textContent = copy.uploadHint;
         Object.entries(copy.labels).forEach(([id, value]) => {
@@ -345,6 +363,7 @@
         else if (byId("profileBody").classList.contains("profile-empty")) byId("profileBody").textContent = copy.emptyProfile;
         updatePnl();
         reviewMarket?.localize();
+        screenshotReview?.localize();
       }
 
       byId("languageToggle").addEventListener("click", () => {
@@ -382,6 +401,7 @@
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
       }
       function loadSample() {
+        screenshotReview?.clear();
         const now = new Date();
         byId("market").value = "US";
         byId("symbol").value = "AAPL";
@@ -428,63 +448,8 @@
       });
       checkService();
 
-      let screenshotPreviewUrl = null;
-      function setOcrStatus(message, state = "info") {
-        const status = byId("ocrStatus");
-        status.textContent = message;
-        status.dataset.state = state;
-        status.hidden = !message;
-      }
-      function clearScreenshot() {
-        byId("screenshotFile").value = "";
-        byId("uploadPreview").hidden = true;
-        byId("recognizeScreenshot").disabled = true;
-        byId("uploadMeta").replaceChildren();
-        if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
-        screenshotPreviewUrl = null;
-        setOcrStatus("");
-      }
-      byId("screenshotFile").addEventListener("change", () => {
-        const file = byId("screenshotFile").files[0];
-        if (!file) return clearScreenshot();
-        if (file.size > 8 * 1024 * 1024) {
-          clearScreenshot();
-          setOcrStatus(tr("fileTooLarge"), "error");
-          return;
-        }
-        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-          clearScreenshot();
-          setOcrStatus(tr("invalidImage"), "error");
-          return;
-        }
-        if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
-        screenshotPreviewUrl = URL.createObjectURL(file);
-        byId("screenshotPreview").src = screenshotPreviewUrl;
-        byId("screenshotPreview").alt = file.name;
-        byId("uploadPreview").hidden = false;
-        byId("recognizeScreenshot").disabled = false;
-        byId("uploadMeta").replaceChildren();
-        appendText(byId("uploadMeta"), "div", "", `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`);
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "button";
-        remove.textContent = tr("removeImage");
-        remove.addEventListener("click", clearScreenshot);
-        byId("uploadMeta").append(remove);
-        setOcrStatus("");
-      });
-
-      function formatLocalInput(value) {
-        if (!value) return "";
-        const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
-        const parsed = new Date(normalized);
-        if (!Number.isFinite(parsed.getTime())) return "";
-        const pad = (number) => String(number).padStart(2, "0");
-        return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
-      }
-      function applyRecognizedFields(fields, confidence, warnings, notice) {
+      function applyRecognizedFields({ fields }) {
         demoSampleActive = false;
-        reviewMarket?.useLive();
         const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
         inputs.forEach((id) => { byId(id).value = ""; });
         byId("buyReason").value = fields.buy_reason || "";
@@ -493,50 +458,14 @@
         byId("buyReasonType").value = "other";
         byId("symbol").value = fields.symbol || "";
         byId("market").value = fields.market || "OTHER";
-        byId("buyTime").value = formatLocalInput(fields.buy_time);
-        byId("sellTime").value = formatLocalInput(fields.sell_time);
+        byId("buyTime").value = screenshotLocalTime(fields.buy_time);
+        byId("sellTime").value = screenshotLocalTime(fields.sell_time);
         if (fields.buy_price != null) byId("buyPrice").value = fields.buy_price;
         if (fields.sell_price != null) byId("sellPrice").value = fields.sell_price;
         if (fields.quantity != null) byId("quantity").value = fields.quantity;
+        reviewMarket?.useLive();
         updatePnl();
-        const labelFor = { symbol: "symbol", market: "market", buy_time: "buyTime", sell_time: "sellTime", buy_price: "buyPrice", sell_price: "sellPrice", quantity: "quantity", buy_reason: "buyReason", sell_reason: "sellReason" };
-        const recognized = Object.keys(labelFor)
-          .filter((key) => fields[key] != null)
-          .map((key) => `${translations[language].labels[labelFor[key]] || (key === "market" ? tr("market") : key)} ${Number.isFinite(confidence[key]) ? `${Math.round(confidence[key] * 100)}%` : "—"}`);
-        const details = [recognized.length ? `${tr("confidence")}: ${recognized.join(" · ")}` : tr("noFields"), notice, ...warnings].filter(Boolean);
-        setOcrStatus(`${tr("ocrFilled")}\n${details.join("\n")}`, "success");
       }
-      byId("recognizeScreenshot").addEventListener("click", async () => {
-        const file = byId("screenshotFile").files[0];
-        if (!file) return;
-        const button = byId("recognizeScreenshot");
-        button.disabled = true;
-        button.textContent = tr("recognizing");
-        setOcrStatus(tr("recognizing"));
-        try {
-          const form = new FormData();
-          form.append("file", file);
-          form.append("language", language);
-          const response = await fetch(`${apiBase()}/recognize-trade-screenshot`, { method: "POST", body: form });
-          if (!response.ok) {
-            const payload = await response.json().catch(() => null);
-            throw new Error(payload?.detail || `${tr("apiError")}${response.status}`);
-          }
-          const result = await response.json();
-          if (result.status === "mock") {
-            setOcrStatus(`${tr("mockOcr")}\n${(result.warnings || []).join("\n")}`, "error");
-          } else if (!Object.values(result.fields || {}).some((value) => value != null && value !== "")) {
-            setOcrStatus([tr("noFields"), result.notice, ...(result.warnings || [])].filter(Boolean).join("\n"), "error");
-          } else {
-            applyRecognizedFields(result.fields || {}, result.field_confidence || {}, result.warnings || [], result.notice || "");
-          }
-        } catch (error) {
-          setOcrStatus(error instanceof TypeError ? tr("noOcrService") : `${tr("ocrFailed")}\n${error.message || ""}`, "error");
-        } finally {
-          button.disabled = !byId("screenshotFile").files[0];
-          button.textContent = tr("recognizeScreenshot");
-        }
-      });
 
       function updatePnl() {
         if (["buyPrice", "sellPrice", "quantity"].some((id) => !byId(id).value.trim())) {
@@ -735,8 +664,10 @@
         button.disabled = true;
         button.textContent = tr("analyzing");
         try {
+          screenshotReview.assertReady();
           buildRequest();
           await reviewMarket.ensure();
+          screenshotReview.assertReady();
           const request = buildRequest();
           const response = await submitToService("/analyze-trade", request);
           if (response && serviceAnalysisMode === "unknown") await checkService();
@@ -855,9 +786,11 @@
         if (profileSelected && lastProfile) renderProfile(lastProfile, lastProfileSource);
       }));
       reviewMarket = createMarketContext({ getLanguage: () => language, getApiBase: apiBase });
+      screenshotReview = createScreenshotReview({ getLanguage: () => language, getApiBase: apiBase, onApply: applyRecognizedFields });
       reviewMarket.useDemo();
       applyLanguage();
       updatePnl();
     </script>
   </body>
 </html>
+
