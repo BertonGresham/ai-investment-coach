@@ -24,7 +24,7 @@ def example(language="zh-CN"):
 
 class ProviderContractTests(unittest.TestCase):
     def setUp(self):
-        environment = patch.dict(os.environ, {"USE_MOCK_LLM": "false", "OPENAI_API_KEY": "local-test-not-a-real-key"})
+        environment = patch.dict(os.environ, {"USE_MOCK_LLM": "false", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "local-test-not-a-real-key"})
         environment.start()
         self.addCleanup(environment.stop)
         rag = patch("app.main.retrieve_theory", return_value=[])
@@ -189,6 +189,155 @@ class ProviderContractTests(unittest.TestCase):
             self.assertEqual(response.headers.get("access-control-allow-origin"), origin if expected == 200 else None)
 
 
+class ClaudeProviderContractTests(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {
+            "USE_MOCK_LLM": "false", "LLM_PROVIDER": "anthropic",
+            "ANTHROPIC_API_KEY": "sk-ant-offline-test", "OPENAI_API_KEY": "",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6", "ANTHROPIC_VISION_MODEL": "",
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+        rag = patch("app.main.retrieve_theory", return_value=[])
+        self.rag = rag.start()
+        self.addCleanup(rag.stop)
+        openai = patch("app.main.OpenAI", side_effect=AssertionError("Unexpected OpenAI call"))
+        self.openai = openai.start()
+        self.addCleanup(openai.stop)
+        self.client = TestClient(app)
+        self.addCleanup(self.client.close)
+
+    def provider(self, data=None, *, reason="end_turn", status=200, timeout=False, blocks=None):
+        self.requests = []
+
+        def handle(request):
+            self.requests.append(request)
+            if timeout:
+                raise httpx.ReadTimeout("private-provider-detail", request=request)
+            if status != 200:
+                return httpx.Response(status, json={"error": {"message": "private-provider-detail"}})
+            content = blocks if blocks is not None else [{"type": "text", "text": json.dumps(data)}]
+            return httpx.Response(200, json={"stop_reason": reason, "content": content})
+
+        client = httpx.Client(transport=httpx.MockTransport(handle))
+        factory = patch("app.claude.Client", return_value=client)
+        factory.start()
+        self.addCleanup(factory.stop)
+        self.addCleanup(client.close)
+        return client
+
+    def upload(self, language="zh-CN"):
+        return self.client.post("/recognize-trade-screenshot", files={"file": ("synthetic.png", PNG, "image/png")}, data={"language": language})
+
+    def test_claude_analysis_uses_correct_credentials_and_validates_evidence(self):
+        for language in ("zh-CN", "ko-KR"):
+            with self.subTest(language=language):
+                payload = example(language)
+                result = mock_behavior_analysis(TradeAnalysisRequest.model_validate(payload)).model_dump()
+                result["trade_id"] = "invented-id"
+                result["detected_behavior_problems"][0]["theory_reference"] = "invented-book"
+                client = self.provider(result)
+                response = self.client.post("/analyze-trade", json=payload)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["trade_id"], payload["trade_id"])
+                self.assertIsNone(response.json()["detected_behavior_problems"][0]["theory_reference"])
+                request = self.requests[0]
+                self.assertEqual(str(request.url), "https://api.anthropic.com/v1/messages")
+                self.assertEqual(request.headers["x-api-key"], "sk-ant-offline-test")
+                self.assertEqual(request.headers["anthropic-version"], "2023-06-01")
+                self.assertNotIn("authorization", request.headers)
+                body = json.loads(request.content)
+                self.assertEqual(body["model"], "claude-sonnet-4-6")
+                self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
+                schema = body["output_config"]["format"]["schema"]
+                self.assertEqual(schema["properties"]["coaching_advice"]["type"], "array")
+                self.assertNotIn("minimum", schema["$defs"]["PersonalityTag"]["properties"]["confidence"])
+                prompt = body["messages"][0]["content"]
+                self.assertIn(language, prompt)
+                self.assertNotIn(payload["user_id"], prompt)
+                self.assertNotIn(payload["stock"]["symbol"], prompt)
+                self.assertTrue(client.is_closed)
+        self.openai.assert_not_called()
+
+    def test_claude_vision_uses_base64_and_leaves_missing_fields_empty(self):
+        for language in ("zh-CN", "ko-KR"):
+            with self.subTest(language=language):
+                client = self.provider({"fields": {"symbol": "AAPL", "buy_time": "unclear date"}, "field_confidence": {"symbol": 0.9, "buy_time": 0.95}, "warnings": []})
+                response = self.upload(language)
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.json()["fields"]["buy_time"])
+                self.assertIsNone(response.json()["fields"]["buy_reason"])
+                self.assertEqual(response.json()["field_confidence"], {"symbol": 0.9})
+                body = json.loads(self.requests[0].content)
+                self.assertIn("Korean" if language == "ko-KR" else "Simplified Chinese", body["system"])
+                source = body["messages"][0]["content"][0]["source"]
+                self.assertEqual(source["media_type"], "image/png")
+                self.assertEqual(base64.b64decode(source["data"]), PNG)
+                confidence_schema = body["output_config"]["format"]["schema"]["properties"]["field_confidence"]
+                self.assertIn("buy_time", confidence_schema["properties"])
+                self.assertFalse(confidence_schema["additionalProperties"])
+                self.assertTrue(client.is_closed)
+        self.openai.assert_not_called()
+
+    def test_claude_rejects_truncation_refusal_and_wrong_output(self):
+        cases = [
+            {"reason": "max_tokens", "data": {"fields": {"symbol": "AAPL"}}},
+            {"reason": "refusal"}, {"reason": "tool_use"},
+            {"data": []}, {"blocks": []},
+            {"blocks": [{"type": "tool_use", "name": "unexpected", "input": {}}]},
+            {"blocks": [{"type": "text", "text": "{}"}] * 2},
+            {"blocks": [{"type": "text", "text": "not JSON"}]},
+            {"data": {"fields": {"buy_price": "private-account-123456"}}},
+        ]
+        for case in cases:
+            for endpoint in ("trade", "vision"):
+                with self.subTest(case=case, endpoint=endpoint):
+                    client = self.provider(**case)
+                    with self.assertLogs("app.main", level="ERROR") as logs:
+                        response = self.upload() if endpoint == "vision" else self.client.post("/analyze-trade", json=example())
+                    self.assertEqual(response.status_code, 502)
+                    self.assertNotIn("private-account-123456", response.text + "\n".join(logs.output))
+                    self.assertTrue(client.is_closed)
+
+    def test_claude_rejects_stringified_lists_and_out_of_range_scores(self):
+        result = mock_behavior_analysis(TradeAnalysisRequest.model_validate(example())).model_dump()
+        result["coaching_advice"] = json.dumps(result["coaching_advice"])
+        self.provider(result)
+        with self.assertLogs("app.main", level="ERROR"):
+            self.assertEqual(self.client.post("/analyze-trade", json=example()).status_code, 502)
+        self.provider({"fields": {"symbol": "AAPL"}, "field_confidence": {"symbol": 1.5}})
+        with self.assertLogs("app.main", level="ERROR"):
+            self.assertEqual(self.upload().status_code, 502)
+
+    def test_claude_provider_errors_are_sanitized(self):
+        for status, timeout in ((401, False), (429, False), (500, False), (200, True)):
+            for endpoint in ("trade", "vision"):
+                with self.subTest(status=status, timeout=timeout, endpoint=endpoint):
+                    client = self.provider(status=status, timeout=timeout)
+                    with self.assertLogs("app.main", level="ERROR") as logs:
+                        response = self.upload() if endpoint == "vision" else self.client.post("/analyze-trade", json=example())
+                    self.assertEqual(response.status_code, 502)
+                    self.assertNotIn("private-provider-detail", response.text + "\n".join(logs.output))
+                    self.assertNotIn("sk-ant-offline-test", response.text)
+                    self.assertTrue(client.is_closed)
+
+    def test_invalid_provider_or_missing_key_never_sends_request(self):
+        for config in ({"ANTHROPIC_API_KEY": ""}, {"LLM_PROVIDER": "invalid"}, {"LLM_PROVIDER": "openai", "OPENAI_API_KEY": "sk-ant-offline-test"}):
+            with self.subTest(config=config), patch.dict(os.environ, config), patch("app.main.claude_json") as provider:
+                self.assertEqual(self.client.post("/analyze-trade", json=example()).status_code, 503)
+                self.assertEqual(self.upload().status_code, 503)
+                provider.assert_not_called()
+                self.rag.assert_not_called()
+        self.openai.assert_not_called()
+
+    def test_claude_mock_never_sends_request_even_with_key(self):
+        with patch.dict(os.environ, {"USE_MOCK_LLM": "true"}), patch("app.main.claude_json") as provider:
+            self.assertEqual(self.client.get("/health").json()["llm_provider"], "anthropic")
+            self.assertEqual(self.client.post("/analyze-trade", json=example()).status_code, 200)
+            self.assertEqual(self.upload().json()["status"], "mock")
+            provider.assert_not_called()
+
+
 class ScreenshotConcurrencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_vision_call_runs_off_event_loop_thread(self):
         event_loop_thread = threading.get_ident()
@@ -198,7 +347,7 @@ class ScreenshotConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             provider_threads.append(threading.get_ident())
             return {"status": "needs_review", "fields": {}, "notice": "Synthetic test."}
 
-        with patch.dict(os.environ, {"USE_MOCK_LLM": "false", "OPENAI_API_KEY": "local-test-not-a-real-key"}), patch("app.main.llm_screenshot_recognition", side_effect=recognize):
+        with patch.dict(os.environ, {"USE_MOCK_LLM": "false", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "local-test-not-a-real-key"}), patch("app.main.llm_screenshot_recognition", side_effect=recognize):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/recognize-trade-screenshot", files={"file": ("synthetic.png", PNG, "image/png")})
         self.assertEqual(response.status_code, 200)
@@ -208,4 +357,3 @@ class ScreenshotConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

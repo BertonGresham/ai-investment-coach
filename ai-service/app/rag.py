@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 def _collection():
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key or api_key.startswith("sk-ant-"):
+        return None
     import chromadb
     from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None
     persist_directory = os.getenv("CHROMA_PERSIST_DIRECTORY", "./.chroma")
     collection_name = os.getenv("CHROMA_COLLECTION", "investment_behavior")
     client = chromadb.PersistentClient(path=str(Path(persist_directory)))
@@ -44,8 +44,8 @@ def retrieve_theory(query: str, limit: int = 3) -> list[RagEvidence]:
     except ImportError:
         logger.info("ChromaDB is not installed; continuing without RAG.")
         return []
-    except Exception:
-        logger.exception("RAG retrieval failed; continuing without retrieved notes.")
+    except Exception as exc:
+        logger.warning("RAG retrieval failed (%s); continuing without retrieved notes.", type(exc).__name__)
         return []
 
     documents = (result.get("documents") or [[]])[0]

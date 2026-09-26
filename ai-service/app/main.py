@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import ValidationError
 
+from app.claude import claude_json
 from app.prompts import SYSTEM_PROMPT, build_analysis_payload, build_user_prompt
 from app.rag import retrieve_theory
 from app.market_context import router as market_context_router
@@ -65,21 +66,33 @@ app.include_router(market_context_router)
 @app.get("/health")
 def health() -> dict[str, str]:
     mode = "mock" if os.getenv("USE_MOCK_LLM", "true").lower() == "true" else "llm"
-    return {"status": "ok", "service": "ai-service", "analysis_mode": mode}
+    return {"status": "ok", "service": "ai-service", "analysis_mode": mode, "llm_provider": _llm_provider()}
+
+
+def _llm_provider() -> str:
+    provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    if provider not in {"openai", "anthropic"}:
+        raise HTTPException(status_code=503, detail="LLM_PROVIDER must be openai or anthropic.")
+    return provider
+
+
+def _llm_api_key() -> str:
+    provider = _llm_provider()
+    name = "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+    key = os.getenv(name, "").strip()
+    if not key:
+        raise HTTPException(status_code=503, detail=f"LLM mode is enabled but {name} is not configured.")
+    if provider == "openai" and key.startswith("sk-ant-"):
+        raise HTTPException(status_code=503, detail="A Claude key is configured for OpenAI. Set LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY.")
+    return key
 
 
 @app.post("/analyze-trade", response_model=TradeAnalysisResponse)
 def analyze_trade(req: TradeAnalysisRequest) -> TradeAnalysisResponse:
     use_mock = os.getenv("USE_MOCK_LLM", "true").lower() == "true"
-    api_key = os.getenv("OPENAI_API_KEY")
     if use_mock:
         return mock_behavior_analysis(req)
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="LLM mode is enabled but OPENAI_API_KEY is not configured.",
-        )
-    return llm_behavior_analysis(req, api_key)
+    return llm_behavior_analysis(req, _llm_api_key())
 
 
 @app.post("/analyze-profile", response_model=InvestmentProfileResponse)
@@ -138,12 +151,7 @@ async def recognize_trade_screenshot(
 
     if os.getenv("USE_MOCK_LLM", "true").lower() == "true":
         return mock_screenshot_recognition(language)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="LLM mode is enabled but OPENAI_API_KEY is not configured.",
-        )
+    api_key = _llm_api_key()
     return await run_in_threadpool(
         llm_screenshot_recognition, data, content_type, language, api_key
     )
@@ -184,31 +192,53 @@ def llm_screenshot_recognition(
         + "Return only a JSON object with keys fields, field_confidence (0 to 1 per extracted field), and warnings. "
         "fields must contain symbol, market, buy_time, sell_time, buy_price, sell_price, quantity, buy_reason, sell_reason; use null when not readable."
     )
-    data_url = f"data:{content_type};base64,{base64.b64encode(data).decode('ascii')}"
+    image_data = base64.b64encode(data).decode("ascii")
+    instruction = "Extract the visible trade fields. Do not analyze the investment decision yet."
     try:
-        with OpenAI(api_key=api_key, timeout=45.0, max_retries=1) as client:
-            response = client.chat.completions.create(
-                model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Extract the visible trade fields. Do not analyze the investment decision yet."},
-                            {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
-                        ],
-                    },
+        if _llm_provider() == "anthropic":
+            schema = ScreenshotRecognitionResponse.model_json_schema()
+            for name in ("status", "notice"):
+                schema["properties"].pop(name)
+                schema["required"].remove(name)
+            schema["properties"]["field_confidence"] = {
+                "type": "object",
+                "properties": {name: {"type": "number", "minimum": 0, "maximum": 1} for name in ScreenshotTradeFields.model_fields},
+                "additionalProperties": False,
+            }
+            raw = claude_json(
+                api_key=api_key,
+                system=system_prompt,
+                content=[
+                    {"type": "image", "source": {"type": "base64", "media_type": content_type, "data": image_data}},
+                    {"type": "text", "text": instruction},
                 ],
-                response_format={"type": "json_object"},
-                temperature=0,
-                max_tokens=900,
+                schema=schema,
+                vision=True,
             )
-        if response.choices[0].finish_reason != "stop":
-            raise ValueError("The vision model response was not completed.")
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("The vision model returned an empty response.")
-        raw = json.loads(content)
+        else:
+            with OpenAI(api_key=api_key, timeout=45.0, max_retries=1) as client:
+                response = client.chat.completions.create(
+                    model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": instruction},
+                                {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{image_data}", "detail": "high"}},
+                            ],
+                        },
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                    max_tokens=900,
+                )
+            if response.choices[0].finish_reason != "stop":
+                raise ValueError("The vision model response was not completed.")
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("The vision model returned an empty response.")
+            raw = json.loads(content)
         if not isinstance(raw, dict):
             raise ValueError("The vision model response must be a JSON object.")
         raw_fields = raw.get("fields", {})
@@ -285,27 +315,35 @@ def llm_behavior_analysis(
     retrieved = retrieve_theory(query)
     payload = build_analysis_payload(req, retrieved)
     try:
-        with OpenAI(
-            api_key=api_key,
-            timeout=30.0,
-            max_retries=2,
-        ) as client:
-            response = client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_user_prompt(payload)},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=1_500,
+        if _llm_provider() == "anthropic":
+            raw_result = claude_json(
+                api_key=api_key,
+                system=SYSTEM_PROMPT,
+                content=build_user_prompt(payload),
+                schema=TradeAnalysisResponse.model_json_schema(),
             )
-        if response.choices[0].finish_reason != "stop":
-            raise ValueError("The model response was not completed.")
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("The model returned an empty response.")
-        raw_result = json.loads(content)
+        else:
+            with OpenAI(
+                api_key=api_key,
+                timeout=30.0,
+                max_retries=2,
+            ) as client:
+                response = client.chat.completions.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": build_user_prompt(payload)},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                    max_tokens=1_500,
+                )
+            if response.choices[0].finish_reason != "stop":
+                raise ValueError("The model response was not completed.")
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("The model returned an empty response.")
+            raw_result = json.loads(content)
         if not isinstance(raw_result, dict):
             raise ValueError("The model response must be a JSON object.")
         raw_result["trade_id"] = req.trade_id
@@ -575,4 +613,3 @@ def _normalize_datetime(value: datetime) -> datetime:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
-

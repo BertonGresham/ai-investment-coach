@@ -22,13 +22,13 @@ python -m http.server 5173 --directory web-demo
 
 自动背景需要后端运行。读取失败时会停止提交并提示错误，不以虚构行情替代；可重试或取消自动获取，仅按填写的理由复盘。关闭自动获取时，摘要为可选的用户补充，并标记未经验证。
 
-书籍笔记目前按主题规则匹配，非 AI 生成。行为结果顶部另行标明 Mock 或 LLM。尚未执行真实 Embeddings 建库及 LLM/OCR 验收。
+书籍笔记目前按主题规则匹配，非 AI 生成。行为结果顶部另行标明 Mock 或 LLM。真实 Embeddings 建库需要单独配置；LLM/OCR 的离线回归不代表真实账户连通性或识别准确率，演示前应使用所选平台另行验证。
 
 前端状态回归测试：`node --test web-demo/tests/*.test.cjs`（仓库根目录，无需安装 npm 包）。
 
 ## 连接 AI 服务
 
-API 密钥只放在 `ai-service/.env`。在仓库根目录的 PowerShell 里运行 `if (-not (Test-Path .\ai-service\.env)) { Copy-Item .\ai-service\.env.example .\ai-service\.env }`，再用记事本打开：`notepad .\ai-service\.env`。设置 `OPENAI_API_KEY=你的密钥` 和 `USE_MOCK_LLM=false`，保存后重启 AI 服务。示例模板 `.env.example` 只能保留空白占位符，不能把真实密钥写进去；`.env` 已由 Git 忽略，不要上传或贴到聊天中。当前后端使用 OpenAI Python SDK，密钥需要有权调用配置的 OpenAI 模型。
+API 密钥只放在 `ai-service/.env`。在仓库根目录的 PowerShell 里运行 `if (-not (Test-Path .\ai-service\.env)) { Copy-Item .\ai-service\.env.example .\ai-service\.env }`，再用记事本打开：`notepad .\ai-service\.env`。使用 Claude 时设置 `LLM_PROVIDER=anthropic`、`ANTHROPIC_API_KEY=你的Claude密钥`、`ANTHROPIC_MODEL=claude-sonnet-4-6` 和 `USE_MOCK_LLM=false`，保存后重启 AI 服务。示例模板 `.env.example` 只能保留空白占位符，不能把真实密钥写进去；`.env` 已由 Git 忽略。OpenAI 接入也保留，须配置 `LLM_PROVIDER=openai` 与独立的 `OPENAI_API_KEY`。
 
 在 `ai-service` 目录配置 `.env` 并启动 FastAPI：
 
@@ -39,7 +39,6 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8001 --env-file .env
 ~~~
 
-首次启动默认是 `USE_MOCK_LLM=true`，网页状态显示为后端 Mock。配置有效的 `OPENAI_API_KEY` 并设置 `USE_MOCK_LLM=false` 后，才会调用真实 LLM 和视觉模型。网页源站 `localhost:5173` 已列入 AI 服务的开发 CORS 白名单；真机或局域网演示时，在 `AI_SERVICE_CORS_ORIGINS` 中加入网页实际使用的来源地址。
+首次启动默认是 `USE_MOCK_LLM=true`，网页状态显示为后端 Mock。配置所选平台的有效密钥并设置 `USE_MOCK_LLM=false` 后，才会调用真实 LLM 和视觉模型。Claude 可以直接分析自动行情页附带的书籍笔记；可选的 Chroma 向量建库另需 OpenAI Embeddings 密钥。网页源站 `localhost:5173` 已列入 AI 服务的开发 CORS 白名单；真机或局域网演示时，在 `AI_SERVICE_CORS_ORIGINS` 中加入网页实际使用的来源地址。
 
 网页端不需要 `npm install`。真实模型和 RAG 仍需要安装 Python 服务依赖及配置相应 API Key。
-

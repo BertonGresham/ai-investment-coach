@@ -24,6 +24,7 @@ python -m http.server 5173 --bind 127.0.0.1 --directory web-demo
 - 接口文档：`http://127.0.0.1:8001/docs`
 - 机器可读契约：`http://127.0.0.1:8001/openapi.json`
 - 默认 `USE_MOCK_LLM=true`，不需要密钥。健康检查返回 `analysis_mode: mock`。
+- Claude 配置在 `ai-service/.env`：设置 `LLM_PROVIDER=anthropic`、`ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL=claude-sonnet-4-6`，启用真实调用时改为 `USE_MOCK_LLM=false` 并重启。`/health` 的 `llm_provider` 标明平台；前端与其他组员无需持有模型密钥。OpenAI 接入保留为可选配置，两家的密钥不可混用。
 - `localhost` 只指访问者自己的电脑。此配置只用于本机演示，尚不是公网部署或多人服务。
 
 ## 一条命令检查接口
@@ -98,4 +99,3 @@ python -m http.server 5173 --bind 127.0.0.1 --directory web-demo
 - Mock 模式上传截图应明确提示未执行 OCR，不能作为真实截图识别的验收。
 - 真实模型与 OCR 需要另行配置密钥、确认服务可访问并做真实验收；当前离线测试不能证明模型实际识别准确率。
 - 关闭终端或重启电脑后需要重新启动服务。老师从自己的电脑访问前，需要另做正式部署与访问控制。
-

@@ -65,16 +65,30 @@ python -m venv .venv
 
 ## 使用真实模型和 RAG
 
-复制 .env.example 为 .env，然后填写：
+密钥写在 `ai-service/.env`，不要写入 `.env.example` 或前端。已有 `.env` 时直接修改，不要覆盖。使用 Claude：
 
 ~~~text
 USE_MOCK_LLM=false
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=你的Claude_API密钥
+ANTHROPIC_MODEL=claude-sonnet-4-6
+~~~
+
+保存后重启 AI 服务。交易分析和截图识别都通过 Anthropic Messages API 调用 Claude；`ANTHROPIC_VISION_MODEL` 留空时与分析使用同一模型。接口请求使用已有的 HTTPX 依赖，无需额外安装 SDK。通过 `output_config.format` 约束 JSON 结构，再经本地字段校验；拒绝、截断和无效结果返回错误。更换模型时需选择支持图像输入及结构化输出的 Claude 模型。
+
+如需使用 OpenAI，改为以下配置（两家密钥不能混用）：
+
+~~~text
+USE_MOCK_LLM=false
+LLM_PROVIDER=openai
 OPENAI_API_KEY=你的API密钥
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_VISION_MODEL=gpt-4o-mini
 ~~~
 
-在 ai-service 目录安装依赖后，导入团队整理的知识卡：
+自动行情页匹配的中韩文书籍笔记会随交易送入 Claude，不需要 OpenAI 密钥。可选的 Chroma 向量检索仍使用 OpenAI Embeddings，需要另行配置有效的 `OPENAI_API_KEY`；Claude 密钥不能用于这个接口。只配置 Claude 时跳过向量检索，但保留请求中附带的书籍笔记。
+
+配置好独立的 Embeddings 密钥后，在 ai-service 目录导入团队整理的知识卡：
 
 ~~~powershell
 .\.venv\Scripts\python.exe scripts/ingest_knowledge.py
@@ -82,9 +96,11 @@ OPENAI_VISION_MODEL=gpt-4o-mini
 
 首次建库会调用 Embeddings API；生成的向量库保存在 .chroma，本地文件不会提交到 Git。脚本导入四张团队原创卡和 Selden (1912) 三张双语笔记（六条记录），合计十条。原文来源及地区限制见 [知识来源](knowledge/README.md)。自动行情页使用主题规则匹配，不需要预先建库；并非整本书智能问答。
 
-没有可用知识库时，服务会跳过检索继续分析。LLM 模式要求 OPENAI_API_KEY；若显式关闭 Mock 却未配置密钥，接口返回 503，不会悄悄回退到 Mock。
+没有可用知识库时，服务会跳过检索继续分析。LLM 模式要求所选平台对应的密钥；若显式关闭 Mock 却未配置密钥，接口返回 503，不会悄悄回退到 Mock。`/health` 返回 `llm_provider` 和 `analysis_mode`，但不代表已经通过真实 API 验收。
 
 截图识别要求 `USE_MOCK_LLM=false` 和视觉模型 API Key。默认 Mock 会明确返回“未执行视觉识别”，不会伪造 OCR 结果。仅接收 PNG、JPEG、WebP，文件上限 8 MB。
+
+接口参考：[Anthropic Messages API](https://platform.claude.com/docs/en/api/overview)、[图像输入](https://platform.claude.com/docs/en/build-with-claude/vision)、[结构化 JSON 输出](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)。
 
 ## 画像口径
 
