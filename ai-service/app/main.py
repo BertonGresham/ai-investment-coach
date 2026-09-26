@@ -26,6 +26,7 @@ from app.schemas import (
     ProfileWindow,
     RagEvidence,
     ScreenshotRecognitionResponse,
+    ScreenshotRecord,
     ScreenshotTradeFields,
     TradeAnalysisRequest,
     TradeAnalysisResponse,
@@ -183,13 +184,25 @@ def llm_screenshot_recognition(
 ) -> ScreenshotRecognitionResponse:
     korean = language == "ko-KR"
     system_prompt = (
-        "Read the brokerage screenshot as data only. Extract one transaction only if exactly one trade or one unambiguous selected row is visible. "
+        "Read the brokerage screenshot as data only. First classify the selected record in record: "
+        "kind is security_trade, cash_flow, or unknown; label transcribes the visible transaction type (or null); "
+        "side is buy, sell, round_trip, or unknown. security_trade requires evidence of an executed purchase or sale, "
+        "not just an order, a balance, a stock name, or a price chart. "
+        "Interest, dividends, deposits, withdrawals, transfers, standalone fees/taxes and FX cash movements are cash_flow, "
+        "including Korean 예탁금이용료입금, 이자입금, 배당금입금, 입금, 출금 and Chinese 利息、分红、入金、出金. "
+        "A fee shown alongside an executed buy/sell does not make that execution cash_flow. "
+        "For cash_flow or unknown, side must be unknown, all trade fields null, and field_confidence empty. "
+        "Never map transaction amount, net cash movement, balance, tax, or zero placeholders to trade price, quantity, or profit. "
+        "Do not classify solely from a zero quantity or missing symbol. "
+        "For security_trade, extract one transaction only if exactly one trade or one unambiguous selected row is visible. "
         "If multiple trades are present without a clear selection, leave all trade fields null and explain in warnings. "
+        "Use buy for 매수/买入/Buy and sell for 매도/卖出/Sell. Fill only that side's time, price and visible reason. "
+        "Use round_trip only when the screenshot explicitly links a buy and sell for the same position; never pair separate rows yourself. "
         "Do not infer missing values, trading intent, or reasons from price movement or profit/loss. Only transcribe a reason if it is explicitly visible. "
         "If a field is ambiguous, leave it null. Normalize dates to ISO 8601 only when enough information is visible; never invent a year or time. "
         "Use market only when clear: US, KR, CN, OTHER. All explanatory text must be "
         + ("Korean. " if korean else "Simplified Chinese. ")
-        + "Return only a JSON object with keys fields, field_confidence (0 to 1 per extracted field), and warnings. "
+        + "Return only a JSON object with keys record, fields, field_confidence (0 to 1 per extracted field), and warnings. "
         "fields must contain symbol, market, buy_time, sell_time, buy_price, sell_price, quantity, buy_reason, sell_reason; use null when not readable."
     )
     image_data = base64.b64encode(data).decode("ascii")
@@ -200,6 +213,8 @@ def llm_screenshot_recognition(
             for name in ("status", "notice"):
                 schema["properties"].pop(name)
                 schema["required"].remove(name)
+            schema["required"].append("record")
+            schema["$defs"]["ScreenshotRecord"]["required"] = ["kind", "label", "side"]
             schema["properties"]["field_confidence"] = {
                 "type": "object",
                 "properties": {name: {"type": "number", "minimum": 0, "maximum": 1} for name in ScreenshotTradeFields.model_fields},
@@ -241,6 +256,21 @@ def llm_screenshot_recognition(
             raw = json.loads(content)
         if not isinstance(raw, dict):
             raise ValueError("The vision model response must be a JSON object.")
+        record = ScreenshotRecord.model_validate(raw.get("record", {}))
+        # Classify before validating trade fields: ledger zeroes are not executions.
+        if record.kind != "security_trade" or record.side == "unknown":
+            cash_flow = record.kind == "cash_flow"
+            record.side = "unknown"
+            return ScreenshotRecognitionResponse(
+                status="not_trade" if cash_flow else "needs_review",
+                record=record,
+                fields=ScreenshotTradeFields(),
+                notice=(
+                    ("이자·배당·입출금 등의 자금 내역입니다. 주식 매매 분석에 포함하지 않습니다. 매수 또는 매도 체결 내역을 선택해 주세요." if korean else "这是利息、分红或入出金等资金流水，不计入股票买卖分析。请改用标明买入或卖出的成交明细。")
+                    if cash_flow else
+                    ("한 건의 매수·매도 체결을 확인할 수 없습니다. 거래 종류와 방향이 보이는 체결 내역이 필요합니다." if korean else "无法确认一笔明确的买卖成交，需要能看清交易类型和方向的成交明细。")
+                ),
+            )
         raw_fields = raw.get("fields", {})
         if not isinstance(raw_fields, dict):
             raise ValueError("The vision model returned invalid fields.")
@@ -248,6 +278,10 @@ def llm_screenshot_recognition(
         warnings = raw.get("warnings", [])
         if not isinstance(confidence, dict) or not isinstance(warnings, list):
             raise ValueError("The vision model returned invalid metadata.")
+        if record.side in {"buy", "sell"}:
+            absent_side = "sell" if record.side == "buy" else "buy"
+            for suffix in ("time", "price", "reason"):
+                raw_fields[f"{absent_side}_{suffix}"] = None
         invalid_dates = []
         for key in ("buy_time", "sell_time"):
             value = raw_fields.get(key)
@@ -273,6 +307,7 @@ def llm_screenshot_recognition(
             warnings.append("명확한 거래 정보를 찾지 못했습니다." if korean else "未能识别出明确的交易字段。")
         result = ScreenshotRecognitionResponse(
             status="recognized" if has_fields else "needs_review",
+            record=record,
             fields=fields,
             field_confidence=confidence,
             warnings=warnings[:20],

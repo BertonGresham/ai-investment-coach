@@ -203,6 +203,10 @@ Response 包含 short_term、medium_term、long_term 三个窗口的样本数、
 
 `POST /recognize-trade-screenshot` 使用 `multipart/form-data`，表单字段为 `file`（PNG/JPEG/WebP，最大 8 MB）和 `language`（`zh-CN` 或 `ko-KR`）。LLM 模式通过视觉模型提取一笔明确交易的代码、市场、买卖时间/价格和数量；理由只会在截图中明确可见时读取，不从盈亏或 K 线推测。含糊字段返回 null，并提供 `field_confidence` 和 `warnings`。调用方必须让用户确认识别结果，再提交 `/analyze-trade`。
 
+识别先返回 `record`：`kind` 为 `security_trade`、`cash_flow` 或 `unknown`，`label` 为截图原始交易类型（可空），`side` 为 `buy`、`sell`、`round_trip` 或 `unknown`。仅明确证券成交且方向可确认时允许导入。利息、分红、入出金等资金流水返回 `status: not_trade`，所有交易字段为空，不计入行为分析或交易样本；不得把资金金额、税额、余额或 0 占位符映射为价格、数量、盈亏。类型或方向不明返回 `needs_review`。单侧成交只填入该侧字段，不自动配对其他买卖记录。该分类不是资金流水记账功能。
+
+网页支持多图队列（最多 10 张，单张 8 MiB、合计 32 MiB），逐张调用本接口，不新增多文件后端端点。调用方应按各自文件保留结果，失败可单独重试，禁止将多个响应字段自动拼成一笔交易。确认选中结果后才提交该笔 `/analyze-trade`。当前不支持跨图自动配对或批量入库。
+
 Mock 模式不会假装完成图片识别，而是返回 `status: "mock"` 和清楚的说明。
 
 ### RAG知识库导入

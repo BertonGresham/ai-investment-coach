@@ -22,7 +22,56 @@ def example(language="zh-CN"):
     return json.loads((EXAMPLES / f"trade.{language}.json").read_text(encoding="utf-8"))
 
 
-class ProviderContractTests(unittest.TestCase):
+class ScreenshotClassificationMixin:
+    def classified_response(self, data):
+        return self.provider(data if os.environ["LLM_PROVIDER"] == "anthropic" else json.dumps(data))
+
+    def test_cash_flow_zero_placeholders_never_become_a_trade(self):
+        for language in ("zh-CN", "ko-KR"):
+            with self.subTest(language=language):
+                self.classified_response({
+                    "record": {"kind": "cash_flow", "label": "예탁금이용료입금", "side": "unknown"},
+                    "fields": {"buy_time": "2026-07-10", "buy_price": 0, "sell_price": 109, "quantity": 0},
+                    "field_confidence": {"buy_price": 0.9, "quantity": 0.9},
+                })
+                response = self.upload(language)
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertEqual(data["status"], "not_trade")
+                self.assertEqual(data["record"]["label"], "예탁금이용료입금")
+                self.assertTrue(all(value is None for value in data["fields"].values()))
+                self.assertEqual(data["field_confidence"], {})
+                self.assertIn("资金流水" if language == "zh-CN" else "자금 내역", data["notice"])
+
+    def test_missing_or_ambiguous_classification_is_not_importable(self):
+        for record in ({}, {"kind": "unknown"}, {"kind": "security_trade", "side": "unknown"}):
+            with self.subTest(record=record):
+                self.classified_response({"record": record, "fields": {"symbol": "AAPL", "buy_price": 109}})
+                response = self.upload()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["status"], "needs_review")
+                self.assertTrue(all(value is None for value in response.json()["fields"].values()))
+
+    def test_single_execution_never_fills_the_opposite_side(self):
+        for side in ("buy", "sell"):
+            with self.subTest(side=side):
+                self.classified_response({
+                    "record": {"kind": "security_trade", "side": side},
+                    "fields": {"symbol": "AAPL", "quantity": 1, "buy_price": 100, "sell_price": 105, "buy_time": "2026-07-10", "sell_time": "2026-07-11", "buy_reason": "Entry rule", "sell_reason": "Exit rule"},
+                    "field_confidence": {"buy_price": 0.9, "sell_price": 0.9},
+                })
+                response = self.upload()
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertEqual(data["status"], "recognized")
+                opposite = "sell" if side == "buy" else "buy"
+                for suffix in ("price", "time", "reason"):
+                    self.assertIsNone(data["fields"][f"{opposite}_{suffix}"])
+                    self.assertIsNotNone(data["fields"][f"{side}_{suffix}"])
+                self.assertEqual(set(data["field_confidence"]), {f"{side}_price"})
+
+
+class ProviderContractTests(ScreenshotClassificationMixin, unittest.TestCase):
     def setUp(self):
         environment = patch.dict(os.environ, {"USE_MOCK_LLM": "false", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "local-test-not-a-real-key"})
         environment.start()
@@ -35,6 +84,14 @@ class ProviderContractTests(unittest.TestCase):
 
     def provider(self, content=None, status=200, timeout=False, finish_reason="stop"):
         self.requests = []
+        if content:
+            try:
+                decoded = json.loads(content)
+                if isinstance(decoded, dict) and "fields" in decoded:
+                    decoded.setdefault("record", {"kind": "security_trade", "side": "round_trip"})
+                    content = json.dumps(decoded)
+            except json.JSONDecodeError:
+                pass
 
         def handle(request):
             self.requests.append(json.loads(request.content))
@@ -189,7 +246,7 @@ class ProviderContractTests(unittest.TestCase):
             self.assertEqual(response.headers.get("access-control-allow-origin"), origin if expected == 200 else None)
 
 
-class ClaudeProviderContractTests(unittest.TestCase):
+class ClaudeProviderContractTests(ScreenshotClassificationMixin, unittest.TestCase):
     def setUp(self):
         environment = patch.dict(os.environ, {
             "USE_MOCK_LLM": "false", "LLM_PROVIDER": "anthropic",
@@ -209,6 +266,8 @@ class ClaudeProviderContractTests(unittest.TestCase):
 
     def provider(self, data=None, *, reason="end_turn", status=200, timeout=False, blocks=None):
         self.requests = []
+        if isinstance(data, dict) and "fields" in data:
+            data = {"record": {"kind": "security_trade", "side": "round_trip"}, **data}
 
         def handle(request):
             self.requests.append(request)

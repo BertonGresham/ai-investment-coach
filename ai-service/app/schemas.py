@@ -213,8 +213,15 @@ class ScreenshotTradeFields(StrictModel):
         return value
 
 
+class ScreenshotRecord(StrictModel):
+    kind: Literal["security_trade", "cash_flow", "unknown"] = "unknown"
+    label: str | None = Field(default=None, max_length=120)
+    side: Literal["buy", "sell", "round_trip", "unknown"] = "unknown"
+
+
 class ScreenshotRecognitionResponse(StrictModel):
-    status: Literal["recognized", "needs_review", "mock"]
+    status: Literal["recognized", "not_trade", "needs_review", "mock"]
+    record: ScreenshotRecord = Field(default_factory=ScreenshotRecord)
     fields: ScreenshotTradeFields
     field_confidence: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list, max_length=20)
@@ -237,4 +244,3 @@ def _parse_iso_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
-
