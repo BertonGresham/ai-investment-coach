@@ -28,6 +28,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+ai-service/.chroma/
+ai-service/.market-cache/
 
 # Java / Spring Boot
 target/
@@ -51,4 +53,3 @@ data/processed/
 # Secrets
 service-account.json
 firebase-adminsdk*.json
-

@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f7f6" />
+    <title>AI 投资教练 | 交易复盘</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172b29;
+        --muted: #647572;
+        --line: #dce5e2;
+        --paper: #ffffff;
+        --canvas: #f4f7f6;
+        --teal: #176b60;
+        --teal-dark: #10574f;
+        --teal-pale: #e7f3ef;
+        --amber: #a96813;
+        --amber-pale: #fff4df;
+        --red: #ae3f37;
+        --red-pale: #fff0ee;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 14px; }
+      button, input, select, textarea { font: inherit; }
+      button { cursor: pointer; }
+      .topbar { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 30px; background: var(--paper); border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 11px; min-width: 205px; }
+      .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--teal); color: white; font-weight: 800; font-size: 13px; }
+      .brand-name { font-size: 14px; font-weight: 800; letter-spacing: 0; }
+      .brand-caption { color: var(--muted); font-size: 11px; margin-top: 2px; }
+      .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+      .language-toggle { min-width: 58px; padding: 0 9px; }
+      .connection { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #a4b2ae; }
+      .connection[data-state="online"] .connection-dot { background: #23836f; }
+      .connection[data-state="offline"] .connection-dot { background: #c17b28; }
+      .api-field { width: min(270px, 30vw); height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: #fff; font-size: 12px; }
+      .layout { max-width: 1320px; margin: 0 auto; padding: 24px 28px 48px; }
+      .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+      .eyebrow { color: var(--teal); font-size: 11px; font-weight: 800; }
+      h1 { margin: 5px 0 0; font-size: 25px; line-height: 1.25; letter-spacing: 0; }
+      .subtitle { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+      .nav-tabs { display: flex; gap: 5px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+      .tab { min-height: 39px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 13px; font-weight: 700; }
+      .tab[aria-selected="true"] { border-bottom-color: var(--teal); color: var(--teal-dark); }
+      .work-grid { display: grid; grid-template-columns: minmax(330px, 0.88fr) minmax(440px, 1.12fr); gap: 22px; align-items: start; }
+      .section { min-width: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; }
+      .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; padding: 17px 18px 14px; border-bottom: 1px solid #e9efed; }
+      h2 { margin: 0; font-size: 15px; font-weight: 800; }
+      .section-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .form-body { padding: 16px 18px 18px; }
+      .upload-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+      .upload-row .button { display: inline-flex; align-items: center; }
+      .upload-row .button { height: auto; padding: 8px 12px; }
+      .upload-row .field-hint { flex-basis: 100%; }
+      .upload-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+      .upload-input:focus-visible + label { outline: 2px solid var(--teal); outline-offset: 2px; }
+      .screenshot-queue { list-style: none; margin: 6px 0 0; padding: 0; max-height: 230px; overflow-y: auto; }
+      .screenshot-item { display: grid; grid-template-columns: minmax(0, 1fr) 68px; gap: 8px; align-items: center; width: 100%; min-height: 42px; padding: 8px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: transparent; color: var(--ink); font-size: 12px; }
+      .screenshot-item[aria-pressed="true"] { background: var(--teal-pale); box-shadow: inset 3px 0 var(--teal); }
+      .screenshot-name { overflow-wrap: anywhere; }
+      .screenshot-state { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+      .upload-preview { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; }
+      .upload-preview img { width: 112px; height: 152px; flex: 0 0 112px; object-fit: contain; border: 1px solid var(--line); border-radius: 5px; }
+      .upload-preview > div { min-width: 0; }
+      .upload-preview .button { height: auto; padding: 8px; }
+      .upload-meta { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+      .ocr-status { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+      .ocr-status[data-state="error"] { color: var(--red); }
+      .ocr-status[data-state="success"] { color: var(--teal-dark); }
+      .ocr-review { margin: 14px 0; border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
+      .ocr-review h3 { margin: 0 0 8px; font-size: 13px; }
+      .ocr-review table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+      .ocr-review th, .ocr-review td { text-align: left; vertical-align: top; overflow-wrap: anywhere; padding: 8px 5px; border-bottom: 1px solid var(--line); font-weight: 400; }
+      .ocr-review th:first-child { width: 27%; }
+      .ocr-review th:last-child { width: 25%; }
+      .ocr-review thead th { color: var(--muted); font-weight: 700; }
+      .ocr-review tr[data-review="true"] { background: var(--amber-pale); }
+      .ocr-review .button { height: auto; padding: 8px 12px; }
+      .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 11px; }
+      .field { min-width: 0; display: grid; gap: 6px; }
+      .form-grid > .wide { grid-column: 1 / -1; }
+      label { color: #405550; font-size: 12px; font-weight: 700; }
+      input, select, textarea { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #d7e1de; border-radius: 5px; padding: 8px 10px; color: var(--ink); background: #fff; outline: none; }
+      input:focus, select:focus, textarea:focus { border-color: #57988b; box-shadow: 0 0 0 2px #e2f1ed; }
+      textarea { min-height: 66px; resize: vertical; line-height: 1.5; }
+      .field-hint { color: #7b8986; font-size: 11px; line-height: 1.45; }
+      .form-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+      .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .button { min-height: 38px; border: 1px solid var(--line); border-radius: 5px; padding: 0 13px; background: #fff; color: #405550; font-weight: 700; font-size: 12px; }
+      .button:hover { background: #f7faf9; }
+      .button.primary { border-color: var(--teal); background: var(--teal); color: #fff; }
+      .button.primary:hover { background: var(--teal-dark); }
+      .button:disabled { cursor: wait; opacity: .65; }
+      .pnl-inline { color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .result-body { padding: 18px; }
+      .empty-state { min-height: 330px; display: grid; align-content: center; justify-items: center; padding: 24px; text-align: center; }
+      .empty-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #cfe2dc; border-radius: 8px; background: var(--teal-pale); color: var(--teal); font-size: 18px; font-weight: 800; }
+      .empty-title { margin: 14px 0 0; font-size: 14px; font-weight: 800; }
+      .empty-copy { max-width: 300px; margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+      .result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .result-date { margin-top: 5px; color: var(--muted); font-size: 11px; }
+      .mode-badge { border-radius: 4px; padding: 5px 8px; background: var(--teal-pale); color: var(--teal-dark); font-size: 10px; font-weight: 800; white-space: nowrap; }
+      .mode-badge.local { background: var(--amber-pale); color: #87550d; }
+      .summary { margin: 17px 0 16px; font-size: 16px; line-height: 1.6; font-weight: 750; }
+      .subhead { margin: 18px 0 9px; color: #405550; font-size: 12px; font-weight: 800; }
+      .problem-list { display: grid; gap: 9px; }
+      .problem { border-left: 3px solid #d5a454; padding: 2px 0 2px 11px; }
+      .problem.high { border-left-color: var(--red); }
+      .problem-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+      .problem-title { font-size: 13px; font-weight: 800; line-height: 1.5; }
+      .severity { color: var(--amber); font-size: 10px; font-weight: 800; white-space: nowrap; }
+      .severity.high { color: var(--red); }
+      .problem p { margin: 4px 0 0; color: #536762; font-size: 12px; line-height: 1.65; }
+      .theory { color: var(--teal-dark) !important; }
+      .tag-list { display: flex; flex-wrap: wrap; gap: 7px; }
+      .tag { border: 1px solid #cfe2dc; border-radius: 5px; padding: 7px 9px; background: #fbfdfc; }
+      .tag-name { color: var(--teal-dark); font-size: 12px; font-weight: 800; }
+      .tag-confidence { margin-top: 3px; color: var(--muted); font-size: 10px; }
+      .advice-list { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: #455b56; font-size: 12px; line-height: 1.6; }
+      .uncertainty { margin-top: 17px; padding: 11px 12px; border-radius: 5px; background: #f3f7f6; }
+      .uncertainty strong { display: block; color: #405550; font-size: 11px; }
+      .uncertainty p { margin: 5px 0 0; color: #657571; font-size: 11px; line-height: 1.6; }
+      .notice { margin: 13px 0 0; color: #75827f; font-size: 10px; line-height: 1.6; }
+      .inline-error { margin: 12px 0 0; color: var(--red); font-size: 12px; line-height: 1.55; }
+      .profile-view { display: none; }
+      .profile-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+      .profile-window { padding: 15px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+      .profile-window h3 { margin: 0; font-size: 13px; }
+      .profile-count { margin-top: 10px; color: var(--teal-dark); font-size: 24px; line-height: 1; font-weight: 800; }
+      .profile-count span { color: var(--muted); font-size: 11px; font-weight: 600; }
+      .profile-note { margin-top: 9px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+      .profile-patterns { display: grid; gap: 6px; margin-top: 10px; }
+      .profile-pattern { display: flex; justify-content: space-between; gap: 10px; color: #405550; font-size: 11px; }
+      .profile-pattern span:last-child { color: var(--muted); white-space: nowrap; }
+      .profile-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 13px; }
+      .profile-toolbar p { margin: 0; color: var(--muted); font-size: 12px; }
+      .profile-empty { padding: 36px 20px; text-align: center; background: var(--paper); border: 1px dashed #cbd9d5; border-radius: 6px; color: var(--muted); line-height: 1.7; }
+      .privacy-line { margin-top: 16px; color: #71807c; font-size: 11px; }
+      @media (max-width: 850px) {
+        .topbar { padding: 0 17px; }
+        .layout { padding: 20px 17px 36px; }
+        .work-grid { grid-template-columns: minmax(0, 1fr); }
+        .profile-summary { grid-template-columns: minmax(0, 1fr); }
+        .empty-state { min-height: 190px; }
+      }
+      @media (max-width: 560px) {
+        .topbar { min-height: 60px; gap: 8px; }
+        .brand { min-width: 0; }
+        .brand-caption { display: none; }
+        .top-actions { flex: 1; }
+        .connection { font-size: 0; }
+        .connection-dot { width: 9px; height: 9px; }
+        .top-actions { gap: 7px; }
+        .api-field { width: min(150px, 39vw); }
+        .language-toggle { min-width: 52px; padding: 0 7px; }
+        .layout { padding: 17px 12px 28px; }
+        .page-head { align-items: flex-start; flex-direction: column; gap: 7px; }
+        h1 { font-size: 22px; }
+        .section-head, .form-body, .result-body { padding-left: 13px; padding-right: 13px; }
+        .form-grid { grid-template-columns: minmax(0, 1fr); gap: 11px 8px; }
+        .form-footer { align-items: flex-start; flex-direction: column; }
+        .pnl-inline { white-space: normal; }
+      }
+      .market-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; border-top: 1px solid #d9e2df; padding-top: 15px; }
+      .market-switch { display: flex; align-items: center; gap: 7px; width: 100%; }
+      .market-switch input { width: 17px; height: 17px; min-height: 0; accent-color: #167b67; }
+      .market-switch label { margin: 0; }
+      .market-source { flex: 1; min-width: 180px; }
+      .market-source select { width: 100%; }
+      .market-status { white-space: pre-line; font-size: 13px; margin: 0; color: #536560; }
+      .market-status[data-error="true"] { color: #a12c3e; }
+      .market-facts { min-width: 0; border-top: 1px solid #d9e2df; padding: 16px 20px; overflow-wrap: anywhere; font-size: 13px; }
+      .market-facts h3 { font-size: 14px; margin: 6px 0; }
+      .market-facts p { line-height: 1.65; margin: 6px 0; }
+      .market-facts a { color: #126b59; font-size: 12px; }
+      .market-provenance { font-weight: 600; color: #42554e; }
+      .market-metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; margin: 14px 0 22px; }
+      .market-metrics dt { color: #536560; }
+      .market-metrics dd { margin: 0; font-variant-numeric: tabular-nums; }
+      .book-note { padding: 12px 0; border-bottom: 1px solid #e4eae7; }
+      .book-question { color: #165f50; }
+      #klineSummary[readonly] { background: #f3f6f5; color: #4a5b55; min-height: 118px; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div><div class="brand-name">AI 投资教练</div><div class="brand-caption">投资决策行为复盘</div></div>
+      </div>
+      <div class="top-actions">
+        <div id="connection" class="connection" data-state="checking"><span class="connection-dot"></span><span id="connectionText">检查服务中</span></div>
+        <input id="apiUrl" class="api-field" aria-label="AI 服务地址" placeholder="AI 服务地址" />
+        <button id="languageToggle" class="button language-toggle" type="button" aria-label="한국어로 보기">한국어</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">AI INVESTMENT COACH / 复盘工作台</div>
+          <h1>看清决策，不预测涨跌</h1>
+          <p class="subtitle">把一笔交易拆解成可观察的行为线索，再从重复记录中认识自己的决策习惯。</p>
+        </div>
+      </div>
+
+      <nav id="reviewTabs" class="nav-tabs" role="tablist" aria-label="复盘页面">
+        <button class="tab" role="tab" aria-selected="true" data-tab="trade">单笔复盘</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="profile">行为画像 <span id="historyCount">0</span></button>
+      </nav>
+
+      <section id="tradeView" class="work-grid" role="tabpanel">
+        <section class="section" aria-labelledby="tradeHeading">
+          <div class="section-head">
+            <div><h2 id="tradeHeading">交易记录</h2><p class="section-subtitle">记录当时的理由与市场背景，盈亏本身不代表决策质量。</p></div>
+          </div>
+          <form id="tradeForm" class="form-body">
+            <div class="field wide upload-field">
+              <label id="screenshotFieldLabel" for="screenshotFile" data-i18n="screenshotLabel">券商交易截图</label>
+              <div class="upload-row">
+                <input id="screenshotFile" class="upload-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-describedby="screenshotLimits" />
+                <label id="chooseScreenshot" class="button" for="screenshotFile">选择图片</label>
+                <button id="recognizeScreenshot" class="button" type="button" disabled>识别截图</button>
+                <button id="stopScreenshots" class="button" type="button" hidden>停止识别</button>
+                <button id="clearScreenshots" class="button" type="button" hidden>清空图片</button>
+                <span id="screenshotLimits" class="field-hint" data-i18n="uploadHint">PNG、JPG 或 WebP。最多 10 张，单张 8 MB，合计 32 MB。</span>
+              </div>
+              <p id="screenshotProgress" class="field-hint" role="status" aria-live="polite" hidden></p>
+              <ul id="screenshotQueue" class="screenshot-queue" hidden></ul>
+              <div id="uploadPreview" class="upload-preview" hidden>
+                <img id="screenshotPreview" alt="" />
+                <div><div id="uploadMeta" class="upload-meta"></div><button id="removeScreenshot" class="button" type="button">移除图片</button></div>
+              </div>
+              <p id="ocrStatus" class="ocr-status" role="status" aria-live="polite" hidden></p>
+              <section id="screenshotReview" class="ocr-review" aria-labelledby="screenshotReviewTitle" hidden>
+                <h3 id="screenshotReviewTitle">待核对的识别结果</h3>
+                <table><thead><tr id="screenshotReviewHead"></tr></thead><tbody id="screenshotReviewRows"></tbody></table>
+                <div id="screenshotReviewWarnings" class="field-hint"></div>
+                <div class="button-row"><button id="confirmScreenshot" class="button primary" type="button">确认并替换表单</button><button id="cancelScreenshot" class="button" type="button">取消</button></div>
+              </section>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label for="market">市场</label><select id="market" name="market"><option value="US">美国</option><option value="KR">韩国</option><option value="CN">中国</option><option value="OTHER">其他</option></select></div>
+              <div class="field"><label for="symbol">股票代码</label><input id="symbol" name="symbol" value="AAPL" maxlength="24" /></div>
+              <div class="field"><label for="quantity">股数</label><input id="quantity" name="quantity" type="number" min="1" step="1" value="10" required /></div>
+              <div class="field"><label for="buyTime">买入时间</label><input id="buyTime" name="buyTime" type="datetime-local" step="1" required /></div>
+              <div class="field"><label for="sellTime">卖出时间</label><input id="sellTime" name="sellTime" type="datetime-local" step="1" /></div>
+              <div class="field"><label for="buyPrice">买入价格</label><input id="buyPrice" name="buyPrice" type="number" min="0.0001" step="any" value="218.5" required /></div>
+              <div class="field"><label for="sellPrice">卖出价格</label><input id="sellPrice" name="sellPrice" type="number" min="0.0001" step="any" value="213.2" /></div>
+              <div class="field"><label for="buyReasonType">买入理由类型</label><select id="buyReasonType" name="buyReasonType"><option value="fear_of_missing_out">害怕错过 / 追涨</option><option value="plan">按计划执行</option><option value="technical_signal">技术信号</option><option value="news">消息影响</option><option value="other">其他</option></select></div>
+              <div class="field"><label for="sellReason">卖出理由</label><input id="sellReason" name="sellReason" value="下跌后害怕继续亏损，所以卖出" maxlength="1000" /></div>
+              <div class="field wide"><label for="buyReason">买入理由</label><textarea id="buyReason" name="buyReason" required maxlength="1000">看到价格快速上涨，担心错过机会，所以买入</textarea></div>
+              <div class="field wide"><span id="timeZoneHint" class="field-hint"></span></div>
+              <div class="wide market-tools">
+                <div class="market-switch"><input id="autoMarket" type="checkbox" checked /><label id="autoMarketLabel" for="autoMarket">自动获取买入前日 K</label></div>
+                <div class="field market-source"><label id="marketSourceLabel" for="marketSource">行情来源</label><select id="marketSource"><option value="yahoo">真实历史行情 · Yahoo</option><option value="demo">合成演示数据</option></select></div>
+                <button id="fetchMarket" class="button" type="button">获取行情背景</button>
+              </div>
+              <p id="marketStatus" class="wide market-status" role="status" aria-live="polite" hidden></p>
+              <div class="field wide"><label for="klineSummary">买入前行情摘要</label><textarea id="klineSummary" name="klineSummary" maxlength="2000" readonly></textarea><span id="klineHint" class="field-hint">仅取买入日期之前的日 K。</span></div>
+            </div>
+            <div class="form-footer">
+              <div class="button-row"><button class="button primary" id="analyzeButton" type="submit">分析这笔交易</button><button class="button" id="sampleButton" type="button">载入演示案例</button></div>
+              <div id="pnlPreview" class="pnl-inline" aria-live="polite"></div>
+            </div>
+            <p id="formError" class="inline-error" role="alert" hidden></p>
+          </form>
+        </section>
+
+        <section class="section" aria-labelledby="resultHeading">
+          <div class="section-head"><div><h2 id="resultHeading">行为复盘</h2><p class="section-subtitle">证据、解释与不确定性分开呈现。</p></div></div>
+          <div id="resultBody" class="result-body">
+            <div class="empty-state"><div class="empty-mark" aria-hidden="true">↗</div><p class="empty-title">等待一笔交易记录</p><p class="empty-copy">提交后查看行为问题、行为标签、复盘建议和判断边界。演示数据只保存在当前页面内存中。</p></div>
+          </div>
+          <section id="marketFacts" class="market-facts" aria-live="polite" hidden></section>
+        </section>
+      </section>
+
+      <section id="profileView" class="profile-view" role="tabpanel">
+        <div class="profile-toolbar"><p>按买入时间统计近期重复出现的行为线索。</p><button id="refreshProfile" class="button primary" type="button">更新行为画像</button></div>
+        <div id="profileBody" class="profile-empty">完成至少一笔交易复盘后，这里会显示近 7 天、30 天和 90 天的观察结果。</div>
+      </section>
+      <div class="privacy-line">仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。</div>
+    </main>
+
+    <script src="market-context.js"></script>
+    <script src="screenshot-review.js?v=2"></script>
+    <script>
+      const byId = (id) => document.getElementById(id);
+      const translations = {
+        "zh-CN": {
+          languageButton: "한국어", languageAria: "切换到韩语", title: "AI 投资教练 | 交易复盘",
+          brand: "AI 投资教练", brandCaption: "投资决策行为复盘", checking: "检查服务中", connectedMock: "服务已连接 · Mock", connectedLlm: "服务已连接 · LLM", connected: "AI 服务已连接", offline: "本地演示模式",
+          apiLabel: "AI 服务地址", apiPlaceholder: "AI 服务地址", eyebrow: "AI INVESTMENT COACH / 复盘工作台", pageTitle: "看清决策，不预测涨跌", pageSubtitle: "把一笔交易拆解成可观察的行为线索，再从重复记录中认识自己的决策习惯。",
+          tradeTab: "单笔复盘", profileTab: "行为画像", tradeHeading: "交易记录", tradeSubtitle: "记录当时的理由与市场背景，盈亏本身不代表决策质量。", resultHeading: "行为复盘", resultSubtitle: "证据、解释与不确定性分开呈现。",
+          screenshotLabel: "券商交易截图", chooseScreenshot: "重新选择图片", recognizeScreenshot: "识别截图", uploadHint: "PNG、JPG 或 WebP。最多 10 张，单张 8 MB，合计 32 MB。识别时发送到所配置的 AI 服务，本演示不保存图片。", uploadNoFile: "尚未选择图片。", removeImage: "移除图片", recognizing: "正在识别截图…", noOcrService: "无法连接 AI 服务。请启动后端视觉识别 API。", mockOcr: "当前后端处于 Mock 模式，没有执行真实图片识别。配置视觉模型后即可识别。", ocrFilled: "", ocrFailed: "截图识别失败。请检查服务连接，或手动填写交易信息。", fileTooLarge: "图片超过 8 MB，请选择较小的图片。", invalidImage: "请选择 PNG、JPG 或 WebP 图片。", confidence: "字段置信度", noFields: "未识别出可用交易字段。请手动填写。", market: "市场", markets: ["美国", "韩国", "中国", "其他"], labels: { market: "市场", symbol: "股票代码", quantity: "股数", buyTime: "买入时间", sellTime: "卖出时间", buyPrice: "买入价格", sellPrice: "卖出价格", buyReasonType: "买入理由类型", sellReason: "卖出理由", buyReason: "买入理由", klineSummary: "K 线摘要" },
+          reasonTypes: ["害怕错过 / 追涨", "按计划执行", "技术信号", "消息影响", "其他"], klineHint: "只作为当时决策背景，不用于推测股票未来走势。", analyze: "分析这笔交易", analyzing: "分析中…", sample: "载入演示案例", pnlPrefix: "未计手续费盈亏", pnlPercentSuffix: "%", waitingTitle: "等待一笔交易记录", waitingCopy: "提交后查看行为问题、行为标签、复盘建议和判断边界。演示数据只保存在当前页面内存中。",
+          emptyProfile: "完成至少一笔交易复盘后，这里会显示近 7 天、30 天和 90 天的观察结果。", profileToolbar: "按买入时间统计近期重复出现的行为线索。", refreshProfile: "更新行为画像", privacy: "仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。", formMissingReason: "请填写买入理由。", formBuyTime: "请填写有效的买入时间。", formBuyPrice: "买入价格必须大于 0。", formQuantity: "股数必须是正整数。", formSellPair: "卖出时间和卖出价格需要同时填写，或同时留空。", formSellTime: "卖出时间不能早于买入时间。", formSellPrice: "卖出价格必须大于 0。", apiError: "AI 服务返回错误：", analyzeFailed: "分析失败，请检查输入。", profileNeeded: "先完成一笔交易复盘，再生成行为画像。", profileFailed: "画像生成失败。",
+          resultTitle: "行为复盘结果", resultLanguageMismatch: "已有分析正文仍为韩语；点击“分析这笔交易”可按当前语言重新生成。", evidence: "观察到的线索", tags: "本次行为标签", noTags: "暂未形成明确标签。", advice: "复盘建议", questions: "复盘问题", uncertainty: "判断边界", fewSamples: "样本较少", someSamples: "样本一般", manySamples: "样本较多", severity: { high: "较明显", medium: "留意", low: "线索" }, basis: "依据：", theory: "理论参考：", confidenceSuffix: "% 线索强度", profileDays: " 天观察", countUnit: " 笔 · ", confidenceLevels: { low: "样本较少", medium: "样本一般", high: "样本较多" }, patterns: "常见行为标签", recurring: "重复出现的问题", sampleUnit: " 笔", recentNoSamples: "最近{days}天没有可用交易样本。", fewProfile: "最近{days}天有{count}笔样本，样本较少，暂不判断稳定行为模式。", profileHasTags: "最近{days}天有{count}笔样本；较常出现的标签是{tags}。", profileNoTags: "最近{days}天有{count}笔样本，暂未出现重复的行为标签。", localData: "本地演示数据", aiProfile: "AI 服务画像", profileAsOf: "统计截至", profileLimit: "样本较少时，标签只代表待观察的倾向，不是心理诊断。", ocrReasonNotGuessed: "买卖理由不会由盈亏或图表推测。",
+        },
+        "ko-KR": {
+          languageButton: "中文", languageAria: "중국어로 전환", title: "AI 투자 코치 | 거래 복기",
+          brand: "AI 투자 코치", brandCaption: "투자 의사결정 행동 복기", checking: "서비스 확인 중", connectedMock: "서비스 연결됨 · Mock", connectedLlm: "서비스 연결됨 · LLM", connected: "AI 서비스 연결됨", offline: "로컬 데모 모드",
+          apiLabel: "AI 서비스 주소", apiPlaceholder: "AI 서비스 주소", eyebrow: "AI INVESTMENT COACH / 거래 복기", pageTitle: "결정을 살펴보고, 주가를 예측하지 않습니다", pageSubtitle: "한 번의 거래에서 행동 단서를 살펴보고, 반복 기록을 통해 의사결정 습관을 알아봅니다.",
+          tradeTab: "거래 복기", profileTab: "행동 프로필", tradeHeading: "거래 기록", tradeSubtitle: "당시의 이유와 시장 배경을 기록하세요. 손익만으로 의사결정의 질을 판단할 수는 없습니다.", resultHeading: "행동 복기", resultSubtitle: "근거, 해석, 불확실성을 나누어 보여줍니다.",
+          screenshotLabel: "증권사 거래 스크린샷", chooseScreenshot: "이미지 다시 선택", recognizeScreenshot: "스크린샷 인식", uploadHint: "PNG, JPG, WebP. 최대 10장, 장당 8MB, 합계 32MB. 인식 시 설정한 AI 서비스로 전송되며 이 데모는 이미지를 저장하지 않습니다.", uploadNoFile: "선택된 이미지가 없습니다.", removeImage: "이미지 제거", recognizing: "스크린샷을 인식하는 중…", noOcrService: "AI 서비스에 연결할 수 없습니다. 백엔드 비전 인식 API를 시작하세요.", mockOcr: "백엔드가 Mock 모드라 실제 이미지 인식은 수행되지 않았습니다. 비전 모델을 설정하면 인식할 수 있습니다.", ocrFilled: "", ocrFailed: "스크린샷을 인식하지 못했습니다. 서비스를 확인하거나 거래 정보를 직접 입력하세요.", fileTooLarge: "이미지가 8MB를 초과합니다. 더 작은 이미지를 선택하세요.", invalidImage: "PNG, JPG 또는 WebP 이미지를 선택하세요.", confidence: "항목 신뢰도", noFields: "거래 정보를 인식하지 못했습니다. 직접 입력해 주세요.", market: "시장", markets: ["미국", "한국", "중국", "기타"], labels: { market: "시장", symbol: "종목 코드", quantity: "수량", buyTime: "매수 시간", sellTime: "매도 시간", buyPrice: "매수 가격", sellPrice: "매도 가격", buyReasonType: "매수 이유 유형", sellReason: "매도 이유", buyReason: "매수 이유", klineSummary: "캔들 차트 요약" },
+          reasonTypes: ["놓칠까 봐 매수 / 추격 매수", "계획에 따른 실행", "기술적 신호", "뉴스 영향", "기타"], klineHint: "당시 의사결정의 배경으로만 사용하며 주가의 미래를 예측하지 않습니다.", analyze: "이 거래 분석", analyzing: "분석 중…", sample: "데모 사례 불러오기", pnlPrefix: "수수료 제외 손익", pnlPercentSuffix: "%", waitingTitle: "거래 기록을 기다리는 중", waitingCopy: "제출하면 행동 단서, 태그, 복기 제안과 판단의 한계를 확인할 수 있습니다. 데모 데이터는 현재 페이지 메모리에만 저장됩니다.",
+          emptyProfile: "거래 복기를 한 건 이상 완료하면 최근 7일, 30일, 90일 관찰 결과가 표시됩니다.", profileToolbar: "매수 시간을 기준으로 최근 반복되는 행동 단서를 집계합니다.", refreshProfile: "행동 프로필 업데이트", privacy: "투자 행동 교육과 복기용이며 투자 조언이 아닙니다. 단일 거래로 지속적인 성향을 단정할 수 없습니다.", formMissingReason: "매수 이유를 입력하세요.", formBuyTime: "유효한 매수 시간을 입력하세요.", formBuyPrice: "매수 가격은 0보다 커야 합니다.", formQuantity: "수량은 양의 정수여야 합니다.", formSellPair: "매도 시간과 가격을 함께 입력하거나 둘 다 비워 두세요.", formSellTime: "매도 시간은 매수 시간보다 빠를 수 없습니다.", formSellPrice: "매도 가격은 0보다 커야 합니다.", apiError: "AI 서비스 오류: ", analyzeFailed: "분석에 실패했습니다. 입력 내용을 확인하세요.", profileNeeded: "먼저 거래 복기를 완료한 뒤 프로필을 생성하세요.", profileFailed: "프로필을 생성하지 못했습니다.",
+          resultTitle: "행동 복기 결과", resultLanguageMismatch: "이전 분석 본문은 중국어로 생성되었습니다. 현재 언어로 다시 보려면 ‘이 거래 분석’을 누르세요.", evidence: "관찰된 단서", tags: "이번 거래 행동 태그", noTags: "명확한 태그가 아직 없습니다.", advice: "복기 제안", questions: "복기 질문", uncertainty: "판단의 한계", fewSamples: "표본 적음", someSamples: "표본 보통", manySamples: "표본 충분", severity: { high: "뚜렷함", medium: "주의", low: "단서" }, basis: "근거: ", theory: "이론 참고: ", confidenceSuffix: "% 단서 강도", profileDays: "일 관찰", countUnit: "건 · ", confidenceLevels: { low: "표본 적음", medium: "표본 보통", high: "표본 충분" }, patterns: "자주 나타난 행동 태그", recurring: "반복된 문제", sampleUnit: "건", recentNoSamples: "최근 {days}일간 분석 가능한 거래 표본이 없습니다.", fewProfile: "최근 {days}일간 표본 {count}건이 있습니다. 표본이 적어 안정적인 행동 패턴을 판단하지 않습니다.", profileHasTags: "최근 {days}일간 표본 {count}건이며, 자주 나타난 태그는 {tags}입니다.", profileNoTags: "최근 {days}일간 표본 {count}건이며, 반복되는 행동 태그는 아직 없습니다.", localData: "로컬 데모 데이터", aiProfile: "AI 서비스 프로필", profileAsOf: "집계 기준일", profileLimit: "표본이 적으면 태그는 관찰할 경향일 뿐이며 심리 진단이 아닙니다.", ocrReasonNotGuessed: "손익이나 차트로 매매 이유를 추측하지 않습니다.",
+        },
+      };
+      let language = localStorage.getItem("aiCoachLanguage") === "ko-KR" ? "ko-KR" : "zh-CN";
+      const tr = (key) => translations[language][key];
+      const apiInput = byId("apiUrl");
+      const savedApiUrl = new URLSearchParams(location.search).get("api") || localStorage.getItem("aiCoachApiUrl");
+      apiInput.value = savedApiUrl || `${location.protocol}//${location.hostname || "localhost"}:8001`;
+      const history = [];
+      let currentAnalysis = null;
+      let currentAnalysisMode = "local";
+      let currentAnalysisInput = null;
+      let currentAnalysisLanguage = language;
+      let lastProfile = null;
+      let lastProfileSource = "local";
+      let serviceAnalysisMode = "unknown";
+      let demoSampleActive = false;
+      let reviewMarket = null;
+      let screenshotReview = null;
+
+      function applyLanguage() {
+        const copy = translations[language];
+        document.documentElement.lang = language;
+        document.title = copy.title;
+        document.querySelector(".brand-name").textContent = copy.brand;
+        document.querySelector(".brand-caption").textContent = copy.brandCaption;
+        document.querySelector(".eyebrow").textContent = copy.eyebrow;
+        document.querySelector("h1").textContent = copy.pageTitle;
+        document.querySelector(".page-head .subtitle").textContent = copy.pageSubtitle;
+        byId("reviewTabs").setAttribute("aria-label", language === "ko-KR" ? "복기 화면" : "复盘页面");
+        document.querySelector('[data-tab="trade"]').textContent = copy.tradeTab;
+        document.querySelector('[data-tab="profile"]').innerHTML = `${copy.profileTab} <span id="historyCount">${history.length}</span>`;
+        byId("tradeHeading").textContent = copy.tradeHeading;
+        byId("tradeHeading").nextElementSibling.textContent = copy.tradeSubtitle;
+        byId("resultHeading").textContent = copy.resultHeading;
+        byId("resultHeading").nextElementSibling.textContent = copy.resultSubtitle;
+        byId("screenshotFieldLabel").textContent = copy.screenshotLabel;
+        byId("chooseScreenshot").textContent = copy.chooseScreenshot;
+        byId("recognizeScreenshot").textContent = copy.recognizeScreenshot;
+        byId("removeScreenshot").textContent = copy.removeImage;
+        if (byId("uploadMeta").querySelector("button")) byId("uploadMeta").querySelector("button").textContent = copy.removeImage;
+        document.querySelector('[data-i18n="uploadHint"]').textContent = copy.uploadHint;
+        Object.entries(copy.labels).forEach(([id, value]) => {
+          const label = document.querySelector(`label[for="${id}"]`);
+          if (label) label.textContent = value;
+        });
+        [...byId("market").options].forEach((option, index) => { option.textContent = copy.markets[index]; });
+        [...byId("buyReasonType").options].forEach((option, index) => { option.textContent = copy.reasonTypes[index]; });
+        byId("klineSummary").parentElement.querySelector(".field-hint").textContent = copy.klineHint;
+        byId("analyzeButton").textContent = copy.analyze;
+        byId("sampleButton").textContent = copy.sample;
+        byId("refreshProfile").textContent = copy.refreshProfile;
+        document.querySelector(".profile-toolbar p").textContent = copy.profileToolbar;
+        document.querySelector(".privacy-line").textContent = copy.privacy;
+        byId("apiUrl").setAttribute("aria-label", copy.apiLabel);
+        byId("apiUrl").placeholder = copy.apiPlaceholder;
+        byId("languageToggle").textContent = copy.languageButton;
+        byId("languageToggle").setAttribute("aria-label", copy.languageAria);
+        if (byId("connection").dataset.state === "offline") byId("connectionText").textContent = copy.offline;
+        else if (byId("connection").dataset.state === "checking") byId("connectionText").textContent = copy.checking;
+        else byId("connectionText").textContent = serviceAnalysisMode === "mock" ? copy.connectedMock : serviceAnalysisMode === "llm" ? copy.connectedLlm : copy.connected;
+        if (byId("resultBody").querySelector(".empty-state")) renderEmptyState();
+        if (currentAnalysis) renderAnalysis(currentAnalysis, currentAnalysisMode);
+        if (lastProfile) renderProfile(lastProfile, lastProfileSource);
+        else if (byId("profileBody").classList.contains("profile-empty")) byId("profileBody").textContent = copy.emptyProfile;
+        updatePnl();
+        reviewMarket?.localize();
+        screenshotReview?.localize();
+      }
+
+      byId("languageToggle").addEventListener("click", () => {
+        const previousSample = demoSampleActive ? sampleCopy(language) : null;
+        language = language === "zh-CN" ? "ko-KR" : "zh-CN";
+        const nextSample = sampleCopy(language);
+        if (previousSample) ["buyReason", "sellReason", "klineSummary"].forEach((id) => {
+          if (byId(id).value === previousSample[id]) byId(id).value = nextSample[id];
+        });
+        if (currentAnalysis && currentAnalysisMode === "local" && currentAnalysisInput) {
+          const localizedInput = {
+            ...currentAnalysisInput,
+            analysis_context: { ...currentAnalysisInput.analysis_context, language },
+          };
+          currentAnalysis = makeLocalAnalysis(localizedInput);
+          currentAnalysisLanguage = language;
+          const index = history.findIndex((item) => item.trade_id === currentAnalysis.trade_id);
+          if (index >= 0) history[index] = currentAnalysis;
+          lastProfile = null;
+          byId("profileBody").className = "profile-empty";
+          byId("profileBody").textContent = translations[language].emptyProfile;
+        }
+        localStorage.setItem("aiCoachLanguage", language);
+        applyLanguage();
+      });
+
+      function sampleCopy(locale) {
+        return locale === "ko-KR"
+          ? { buyReason: "가격이 빠르게 올라 기회를 놓칠까 걱정되어 매수", sellReason: "하락 후 추가 손실이 두려워 매도", klineSummary: "매수 전 양봉 3개가 이어졌고, 매수 후 긴 윗꼬리가 나온 뒤 하락" }
+          : { buyReason: "看到价格快速上涨，担心错过机会，所以买入", sellReason: "下跌后害怕继续亏损，所以卖出", klineSummary: "买入前连续3根阳线，买入后出现长上影线，随后回落" };
+      }
+
+      function localDateTime(date) {
+        const pad = (value) => String(value).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      }
+      function loadSample() {
+        screenshotReview?.clear();
+        const now = new Date();
+        byId("market").value = "US";
+        byId("symbol").value = "AAPL";
+        byId("quantity").value = "10";
+        byId("buyTime").value = localDateTime(new Date(now.getTime() - 3 * 60 * 60 * 1000));
+        byId("sellTime").value = localDateTime(new Date(now.getTime() - 60 * 60 * 1000));
+        byId("buyPrice").value = "218.5";
+        byId("sellPrice").value = "213.2";
+        byId("buyReasonType").value = "fear_of_missing_out";
+        const sample = sampleCopy(language);
+        byId("buyReason").value = sample.buyReason;
+        byId("sellReason").value = sample.sellReason;
+        byId("klineSummary").value = "";
+        reviewMarket?.useDemo();
+        byId("ocrStatus").hidden = true;
+        byId("ocrStatus").textContent = "";
+        demoSampleActive = true;
+        updatePnl();
+      }
+      loadSample();
+      byId("tradeForm").addEventListener("input", (event) => { if (event.isTrusted) demoSampleActive = false; });
+      byId("tradeForm").addEventListener("change", (event) => { if (event.isTrusted) demoSampleActive = false; });
+
+      function apiBase() { return apiInput.value.trim().replace(/\/$/, ""); }
+      async function checkService() {
+        const connection = byId("connection");
+        connection.dataset.state = "checking";
+        byId("connectionText").textContent = tr("checking");
+        try {
+          const response = await fetch(`${apiBase()}/health`, { signal: AbortSignal.timeout(1800) });
+          if (!response.ok) throw new Error("service unavailable");
+          const health = await response.json();
+          serviceAnalysisMode = health.analysis_mode || "unknown";
+          connection.dataset.state = "online";
+          byId("connectionText").textContent = serviceAnalysisMode === "mock" ? tr("connectedMock") : serviceAnalysisMode === "llm" ? tr("connectedLlm") : tr("connected");
+        } catch {
+          connection.dataset.state = "offline";
+          byId("connectionText").textContent = tr("offline");
+        }
+      }
+      apiInput.addEventListener("change", () => {
+        localStorage.setItem("aiCoachApiUrl", apiBase());
+        checkService();
+      });
+      checkService();
+
+      function applyRecognizedFields({ fields }) {
+        demoSampleActive = false;
+        byId("formError").hidden = true;
+        const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
+        inputs.forEach((id) => { byId(id).value = ""; });
+        byId("buyReason").value = fields.buy_reason || "";
+        byId("sellReason").value = fields.sell_reason || "";
+        byId("klineSummary").value = "";
+        byId("buyReasonType").value = "other";
+        byId("symbol").value = fields.symbol || "";
+        byId("market").value = fields.market || "OTHER";
+        byId("buyTime").value = screenshotLocalTime(fields.buy_time);
+        byId("sellTime").value = screenshotLocalTime(fields.sell_time);
+        if (fields.buy_price != null) byId("buyPrice").value = fields.buy_price;
+        if (fields.sell_price != null) byId("sellPrice").value = fields.sell_price;
+        if (fields.quantity != null) byId("quantity").value = fields.quantity;
+        reviewMarket?.useLive();
+        updatePnl();
+      }
+
+      function updatePnl() {
+        if (["buyPrice", "sellPrice", "quantity"].some((id) => !byId(id).value.trim())) {
+          byId("pnlPreview").textContent = "";
+          return;
+        }
+        const buy = Number(byId("buyPrice").value);
+        const sell = Number(byId("sellPrice").value);
+        const quantity = Number(byId("quantity").value);
+        const pnl = (sell - buy) * quantity;
+        if (Number.isFinite(pnl) && buy > 0 && sell > 0 && Number.isInteger(quantity) && quantity > 0) {
+          const sign = pnl > 0 ? "+" : "";
+          byId("pnlPreview").textContent = `${tr("pnlPrefix")} ${sign}${pnl.toFixed(2)} · ${(100 * (sell - buy) / buy).toFixed(2)}${tr("pnlPercentSuffix")}`;
+        } else {
+          byId("pnlPreview").textContent = "";
+        }
+      }
+      ["buyPrice", "sellPrice", "quantity"].forEach((id) => byId(id).addEventListener("input", updatePnl));
+      byId("sampleButton").addEventListener("click", loadSample);
+
+      function problem(code, name, severity, evidence, explanation, theory = null) {
+        return { problem_code: code, problem_name: name, severity, evidence, explanation, theory_reference: theory };
+      }
+      function makeLocalAnalysis(data) {
+        const korean = language === "ko-KR";
+        const problems = [];
+        const tags = [];
+        const buy = data.decision.buy_reason;
+        const sell = data.decision.sell_reason || "";
+        if (["担心错过", "害怕错过", "怕错过", "追涨", "追高", "怕买不到", "놓칠까", "FOMO", "추격 매수", "추격매수"].some((word) => buy.includes(word))) {
+          problems.push(problem("FOMO_BUYING", korean ? "기회를 놓칠까 하는 불안이 매수에 영향을 주었을 가능성" : "买入理由可能受到害怕错过的情绪影响", "medium", korean ? "매수 이유에 기회를 놓칠까 걱정했다는 내용이 있습니다." : "买入理由中提到担心错过或追涨。", korean ? "감정이 진입 결정에 관여했을 수 있습니다. 한 건만으로 반복 패턴이라고 단정할 수 없습니다." : "情绪可能参与了入场决策；仅凭一笔记录，无法确认是否形成稳定模式。", korean ? null : "识别害怕错过（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "FOMO_SENSITIVE", tag_name: korean ? "기회 상실 불안에 민감함" : "容易受错失焦虑影响", confidence: 0.62 });
+        }
+        if (["恐慌", "害怕继续亏", "怕继续亏", "受不了亏损", "더 손실", "손실이 두려", "손실 공포", "무서워서 매도"].some((word) => sell.includes(word))) {
+          problems.push(problem("EMOTION_DRIVEN_EXIT", korean ? "손실 압박이 매도 결정에 영향을 주었을 가능성" : "卖出可能受到亏损压力影响", "medium", korean ? "매도 이유에 추가 손실에 대한 두려움이 나타납니다." : "卖出理由提到害怕继续亏损。", korean ? "손실에 대한 불편함이 매도 시점에 영향을 주었을 수 있습니다. 사전 청산 조건과 비교해 보세요." : "亏损后的不适感可能影响卖出时机；需要对照事前退出条件判断是否偏离计划。", korean ? null : "区分规则止损与情绪卖出（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "LOSS_SENSITIVE", tag_name: korean ? "손실 압박에 민감함" : "亏损压力敏感", confidence: 0.6 });
+        }
+        if (!(buy + " " + sell).match(/止损|止盈|计划|规则|条件|退出|손절|익절|계획|규칙|조건|청산/)) {
+          problems.push(problem("EXIT_PLAN_NOT_RECORDED", korean ? "기록에 명확한 청산 계획이 없습니다" : "记录中没有明确的退出计划", "low", korean ? "매매 이유에 익절·손절 또는 청산 조건이 언급되지 않았습니다." : "买卖理由中没有提到止盈、止损或退出条件。", korean ? "현재 기록에 규칙이 없다는 뜻일 뿐, 계획이 없었다고 단정할 수는 없습니다." : "这只说明当前记录未写出退出规则，不能据此断定用户没有制定计划。", korean ? null : "先定义交易计划（AI Investment Coach 团队原创知识卡）"));
+        }
+        if (!problems.length) {
+          problems.push(problem("INSUFFICIENT_SIGNAL", korean ? "현재 기록에서 명확한 행동 문제는 확인되지 않았습니다" : "当前记录未显示明确的行为问题", "low", korean ? "특정 행동을 판단할 만한 단서가 충분하지 않습니다." : "当前理由没有足以支持特定行为判断的线索。", korean ? "사전 계획과 거래 기록을 더 남겨 반복 패턴이 있는지 살펴보세요." : "建议保留事前计划和更多交易记录，再观察是否存在重复模式。", korean ? null : "小样本不等于稳定性格（AI Investment Coach 团队原创知识卡）"));
+          tags.push({ tag_code: "NEEDS_MORE_DATA", tag_name: korean ? "더 많은 표본 필요" : "需要更多样本", confidence: 0.45 });
+        }
+        const notable = problems.filter((item) => item.severity !== "low");
+        return {
+          trade_id: data.trade_id,
+          trade_time: data.trade.buy_time,
+          analysis_type: "single_trade_behavior_analysis",
+          behavior_summary: notable.length ? (korean ? `이번 기록에서 다음 가능성이 관찰됩니다: ${notable.map((item) => item.problem_name).join("; ")}.` : `本次记录可能体现出：${notable.map((item) => item.problem_name).join("；")}。`) : (korean ? "이번 기록만으로는 정보가 제한적이며 명확한 행동 문제는 확인되지 않았습니다." : "本次记录的信息有限，暂未发现明确的行为问题。"),
+          detected_behavior_problems: problems,
+          personality_tags: tags,
+          coaching_advice: korean ? ["다음 거래 전에 진입 이유, 청산 조건, 감당 가능한 최대 손실을 적어 두세요.", "거래 후에는 손익만으로 판단하지 말고 사전 계획과 비교해 복기하세요."] : ["下次交易前写下入场理由、退出条件和可接受的最大损失。", "交易结束后对照事前计划复盘，不要只用盈亏评价决策。"],
+          reflection_questions: korean ? ["이번 매수는 사전에 적어 둔 조건에 부합했나요?", "매도할 때 기존 계획을 실행했나요, 아니면 순간적인 감정에 반응했나요?"] : ["这次买入是否符合事前写下的条件？", "卖出时我是在执行原计划，还是在回应当下情绪？"],
+          risk_notice: korean ? "이 내용은 투자 행동 복기와 교육 목적이며 투자 조언이 아닙니다." : "以上内容仅用于投资行为复盘和教育，不构成任何投资建议。",
+          uncertainty: { level: "high", reason: korean ? "현재 표본은 한 건뿐입니다. 행동 태그는 검증이 필요한 단서이며 장기적인 투자 성향을 뜻하지 않습니다." : "仅有一笔交易记录；行为标签是待验证的线索，不代表长期投资性格。" },
+        };
+      }
+
+      function buildRequest() {
+        const copy = translations[language];
+        const buyTime = new Date(byId("buyTime").value);
+        const sellTimeValue = byId("sellTime").value;
+        const sellPriceValue = byId("sellPrice").value;
+        const sellTime = sellTimeValue ? new Date(sellTimeValue) : null;
+        const buyPrice = Number(byId("buyPrice").value);
+        const sellPrice = sellPriceValue ? Number(sellPriceValue) : null;
+        const quantity = Number(byId("quantity").value);
+        const buyReason = byId("buyReason").value.trim();
+        const error = !buyReason ? copy.formMissingReason
+          : !Number.isFinite(buyTime.getTime()) ? copy.formBuyTime
+          : !Number.isFinite(buyPrice) || buyPrice <= 0 ? copy.formBuyPrice
+          : !Number.isInteger(quantity) || quantity <= 0 ? copy.formQuantity
+          : (Boolean(sellTime) !== (sellPrice !== null)) ? copy.formSellPair
+          : sellTime && (!Number.isFinite(sellTime.getTime()) || sellTime < buyTime) ? copy.formSellTime
+          : sellPrice !== null && (!Number.isFinite(sellPrice) || sellPrice <= 0) ? copy.formSellPrice
+          : null;
+        if (error) throw new Error(error);
+        const profitLoss = sellPrice === null ? null : Number(((sellPrice - buyPrice) * quantity).toFixed(2));
+        const reasonType = byId("buyReasonType").selectedOptions[0].textContent;
+        return {
+          user_id: "web-demo",
+          trade_id: `web-${Date.now()}`,
+          stock: { symbol: byId("symbol").value.trim() || "UNKNOWN", market: byId("market").value },
+          trade: {
+            buy_time: buyTime.toISOString(),
+            sell_time: sellTime ? sellTime.toISOString() : null,
+            buy_price: buyPrice,
+            sell_price: sellPrice,
+            quantity,
+            profit_loss_amount: profitLoss,
+            profit_loss_rate: sellPrice === null ? null : Number(((sellPrice - buyPrice) / buyPrice).toFixed(6)),
+          },
+          decision: {
+            buy_reason: `${reasonType}：${buyReason}`,
+            sell_reason: byId("sellReason").value.trim() || null,
+            planned_holding_period: language === "ko-KR" ? "당일 단타" : "当日短线",
+          },
+          analysis_context: { language, risk_notice_required: true },
+          ...reviewMarket.requestFields(),
+        };
+      }
+
+      async function submitToService(path, body) {
+        let response;
+        try {
+          response = await fetch(`${apiBase()}${path}`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          });
+        } catch {
+          return null;
+        }
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.detail || `${tr("apiError")}${response.status}`);
+        }
+        return response.json();
+      }
+
+      function appendText(parent, tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        node.textContent = text;
+        parent.append(node);
+        return node;
+      }
+      function renderEmptyState() {
+        const host = byId("resultBody");
+        host.replaceChildren();
+        const empty = document.createElement("div"); empty.className = "empty-state";
+        appendText(empty, "div", "empty-mark", "↗");
+        appendText(empty, "p", "empty-title", tr("waitingTitle"));
+        appendText(empty, "p", "empty-copy", tr("waitingCopy"));
+        host.append(empty);
+      }
+      function renderAnalysis(result, mode) {
+        const host = byId("resultBody");
+        host.replaceChildren();
+        const top = document.createElement("div"); top.className = "result-top";
+          const title = document.createElement("div");
+        appendText(title, "h2", "", tr("resultTitle"));
+        appendText(title, "div", "result-date", new Date(result.trade_time).toLocaleString(language));
+        if (currentAnalysisLanguage !== language) appendText(title, "div", "result-date", tr("resultLanguageMismatch"));
+        top.append(title);
+        const badge = mode === "local" ? (language === "ko-KR" ? "로컬 규칙 시뮬레이션" : "本地规则模拟") : serviceAnalysisMode === "mock" ? (language === "ko-KR" ? "백엔드 Mock 모드" : "后端 Mock 模式") : (language === "ko-KR" ? "LLM 분석" : "LLM 服务分析");
+        appendText(top, "span", `mode-badge${mode === "local" || serviceAnalysisMode === "mock" ? " local" : ""}`, badge);
+        host.append(top);
+        appendText(host, "p", "summary", result.behavior_summary);
+        appendText(host, "div", "subhead", tr("evidence"));
+        const problems = document.createElement("div"); problems.className = "problem-list";
+        for (const item of result.detected_behavior_problems) {
+          const box = document.createElement("article"); box.className = `problem${item.severity === "high" ? " high" : ""}`;
+          const row = document.createElement("div"); row.className = "problem-title-row";
+          appendText(row, "strong", "problem-title", item.problem_name);
+          appendText(row, "span", `severity${item.severity === "high" ? " high" : ""}`, translations[language].severity[item.severity] || translations[language].severity.low);
+          box.append(row);
+          appendText(box, "p", "", `${tr("basis")}${item.evidence}`);
+          appendText(box, "p", "", item.explanation);
+          if (item.theory_reference) appendText(box, "p", "theory", `${tr("theory")}${item.theory_reference}`);
+          problems.append(box);
+        }
+        host.append(problems);
+        appendText(host, "div", "subhead", tr("tags"));
+        const tags = document.createElement("div"); tags.className = "tag-list";
+        if (!result.personality_tags.length) appendText(tags, "span", "field-hint", tr("noTags"));
+        for (const item of result.personality_tags) {
+          const tag = document.createElement("div"); tag.className = "tag";
+          appendText(tag, "div", "tag-name", item.tag_name);
+          appendText(tag, "div", "tag-confidence", `${Math.round(item.confidence * 100)}${tr("confidenceSuffix")}`);
+          tags.append(tag);
+        }
+        host.append(tags);
+        appendText(host, "div", "subhead", tr("advice"));
+        const advice = document.createElement("ol"); advice.className = "advice-list";
+        result.coaching_advice.forEach((line) => appendText(advice, "li", "", line));
+        host.append(advice);
+        if (result.reflection_questions?.length) {
+          appendText(host, "div", "subhead", tr("questions"));
+          const questions = document.createElement("ul"); questions.className = "advice-list";
+          result.reflection_questions.forEach((line) => appendText(questions, "li", "", line));
+          host.append(questions);
+        }
+        const uncertain = document.createElement("div"); uncertain.className = "uncertainty";
+        const level = result.uncertainty.level === "high" ? tr("fewSamples") : result.uncertainty.level === "medium" ? tr("someSamples") : tr("manySamples");
+        appendText(uncertain, "strong", "", `${tr("uncertainty")} · ${level}`);
+        appendText(uncertain, "p", "", result.uncertainty.reason);
+        host.append(uncertain);
+        appendText(host, "p", "notice", result.risk_notice);
+      }
+
+      byId("tradeForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = byId("analyzeButton");
+        const errorNode = byId("formError");
+        errorNode.hidden = true;
+        button.disabled = true;
+        button.textContent = tr("analyzing");
+        try {
+          screenshotReview.assertReady();
+          buildRequest();
+          await reviewMarket.ensure();
+          screenshotReview.assertReady();
+          const request = buildRequest();
+          const response = await submitToService("/analyze-trade", request);
+          if (response && serviceAnalysisMode === "unknown") await checkService();
+          const mode = response ? "api" : "local";
+          currentAnalysis = response || makeLocalAnalysis(request);
+          currentAnalysisMode = mode;
+          currentAnalysisInput = request;
+          currentAnalysisLanguage = request.analysis_context.language;
+          history.unshift(currentAnalysis);
+          if (history.length > 100) history.pop();
+          lastProfile = null;
+          byId("historyCount").textContent = history.length;
+          renderAnalysis(currentAnalysis, mode);
+          if (!response) {
+            byId("connection").dataset.state = "offline";
+            byId("connectionText").textContent = tr("offline");
+          }
+        } catch (error) {
+          errorNode.textContent = error instanceof Error ? error.message : tr("analyzeFailed");
+          errorNode.hidden = false;
+        } finally {
+          button.disabled = false;
+          button.textContent = tr("analyze");
+        }
+      });
+
+      function localProfile() {
+        const parsed = history.map((item) => ({ item, time: new Date(item.trade_time) })).filter((x) => Number.isFinite(x.time.getTime()));
+        const asOf = parsed.length ? new Date(Math.max(...parsed.map((x) => x.time.getTime()))) : new Date();
+        return {
+          as_of: asOf.toISOString(),
+          windows: [7, 30, 90].map((days) => {
+            const selected = parsed.filter((x) => asOf - x.time >= 0 && asOf - x.time <= days * 86400000);
+            const counts = new Map();
+            const problemCounts = new Map();
+            for (const { item } of selected) for (const tag of item.personality_tags) {
+              const current = counts.get(tag.tag_code) || { name: tag.tag_name, count: 0 };
+              current.count += 1; counts.set(tag.tag_code, current);
+            }
+            for (const { item } of selected) for (const problem of item.detected_behavior_problems) {
+              if (problem.severity === "low") continue;
+              const current = problemCounts.get(problem.problem_code) || { name: problem.problem_name, count: 0 };
+              current.count += 1; problemCounts.set(problem.problem_code, current);
+            }
+            const sampleCount = selected.length;
+            const patterns = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+            const recurringProblems = [...problemCounts.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+            const format = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => values[key]);
+            const summary = sampleCount === 0 ? format(tr("recentNoSamples"), { days })
+              : sampleCount < 3 ? format(tr("fewProfile"), { days, count: sampleCount })
+              : patterns.length ? format(tr("profileHasTags"), { days, count: sampleCount, tags: patterns.slice(0, 2).map((x) => x.name).join(language === "ko-KR" ? ", " : "、") })
+              : format(tr("profileNoTags"), { days, count: sampleCount });
+            return { days, sampleCount, confidence: sampleCount < 3 ? "low" : sampleCount < 10 ? "medium" : "high", summary, patterns, recurringProblems };
+          }),
+        };
+      }
+      function renderProfile(profile, source) {
+        const host = byId("profileBody"); host.className = "profile-summary"; host.replaceChildren();
+        const windows = profile.windows || [profile.short_term, profile.medium_term, profile.long_term].map((window) => ({
+          days: window.days, sampleCount: window.sample_count, confidence: window.confidence_level,
+          summary: window.summary, patterns: window.dominant_tags.map((x) => ({ name: x.name, count: x.occurrences })),
+          recurringProblems: window.recurring_problems.map((x) => ({ name: x.name, count: x.occurrences })),
+        }));
+        for (const window of windows) {
+          const card = document.createElement("article"); card.className = "profile-window";
+          appendText(card, "h3", "", `${window.days} ${tr("profileDays")}`);
+          const count = document.createElement("div"); count.className = "profile-count";
+          count.textContent = window.sampleCount;
+          const unit = document.createElement("span"); unit.textContent = `${tr("countUnit")}${translations[language].confidenceLevels[window.confidence]}`;
+          count.append(unit); card.append(count);
+          appendText(card, "p", "profile-note", window.summary);
+          if (window.patterns.length) appendText(card, "div", "subhead", tr("patterns"));
+          const patterns = document.createElement("div"); patterns.className = "profile-patterns";
+          for (const pattern of window.patterns) {
+            const row = document.createElement("div"); row.className = "profile-pattern";
+            appendText(row, "span", "", pattern.name);
+            appendText(row, "span", "", `${pattern.count}/${window.sampleCount}${tr("sampleUnit")}`);
+            patterns.append(row);
+          }
+          card.append(patterns);
+          if (window.recurringProblems?.length) {
+            appendText(card, "div", "subhead", tr("recurring"));
+            const problems = document.createElement("div"); problems.className = "profile-patterns";
+            for (const item of window.recurringProblems) {
+              const row = document.createElement("div"); row.className = "profile-pattern";
+              appendText(row, "span", "", item.name);
+              appendText(row, "span", "", `${item.count}/${window.sampleCount}${tr("sampleUnit")}`);
+              problems.append(row);
+            }
+            card.append(problems);
+          }
+          host.append(card);
+        }
+        const note = document.createElement("p"); note.className = "notice"; note.style.gridColumn = "1 / -1";
+        note.textContent = `${tr("profileAsOf")} ${new Date(profile.as_of).toLocaleDateString(language)} · ${source === "local" ? tr("localData") : tr("aiProfile")}。${tr("profileLimit")}`;
+        host.append(note);
+      }
+      byId("refreshProfile").addEventListener("click", async () => {
+        const host = byId("profileBody");
+        if (!history.length) { host.className = "profile-empty"; host.textContent = tr("profileNeeded"); return; }
+        try {
+          const profile = await submitToService("/analyze-profile", { user_id: "web-demo", language, trade_analyses: history });
+          lastProfile = profile || localProfile();
+          lastProfileSource = profile ? "api" : "local";
+          renderProfile(lastProfile, lastProfileSource);
+        } catch (error) {
+          host.className = "profile-empty";
+          host.textContent = error instanceof Error ? error.message : tr("profileFailed");
+        }
+      });
+      document.querySelectorAll("[data-tab]").forEach((tab) => tab.addEventListener("click", () => {
+        document.querySelectorAll("[data-tab]").forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+        const profileSelected = tab.dataset.tab === "profile";
+        byId("tradeView").style.display = profileSelected ? "none" : "grid";
+        byId("profileView").style.display = profileSelected ? "block" : "none";
+        if (profileSelected && lastProfile) renderProfile(lastProfile, lastProfileSource);
+      }));
+      reviewMarket = createMarketContext({ getLanguage: () => language, getApiBase: apiBase });
+      screenshotReview = createScreenshotReview({ getLanguage: () => language, getApiBase: apiBase, onApply: applyRecognizedFields });
+      reviewMarket.useDemo();
+      applyLanguage();
+      updatePnl();
+    </script>
+  </body>
+</html>

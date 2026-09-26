@@ -19,6 +19,7 @@ AI投资教练是一个分析投资者决策行为的AI coaching平台。
 ```text
 ai-investment-coach/
 ├── frontend-app/       # React Native Expo移动端
+├── web-demo/           # 无构建依赖的网页演示
 ├── backend-server/     # Spring Boot主业务后端
 ├── ai-service/         # FastAPI + LLM行为分析服务
 ├── data-service/       # FastAPI + pandas数据管道服务
@@ -39,6 +40,16 @@ ai-investment-coach/
 | Joo Jiho | 数据管道 | 实现CSV上传解析，输出标准交易记录JSON |
 
 ## 本地快速开始
+
+### 网页演示
+
+在仓库根目录运行：
+
+```powershell
+python -m http.server 5173 --directory web-demo
+```
+
+浏览器打开 `http://localhost:5173`。网页无需安装 Node 依赖；支持中韩文、美股买入前日 K 自动背景与附来源的书籍笔记。自动行情需要启动下方 AI 服务；初始案例使用明确标记的合成数据。未启动 AI 服务时，取消自动行情可使用明确标注的本地规则模拟。
 
 ### 1. AI服务
 
@@ -114,4 +125,3 @@ feature/data-service-jiho
 - AI输出必须包含风险提示，不能输出直接买卖建议。
 - 第一阶段先跑通闭环，不追求完整功能。
 - 各模块对接前先遵守`docs/api-contract.md`里的接口格式。
-

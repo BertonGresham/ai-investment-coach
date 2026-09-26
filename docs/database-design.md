@@ -67,3 +67,4 @@
 | result_json | json | AI分析结果 |
 | created_at | datetime | 创建时间 |
 
+
