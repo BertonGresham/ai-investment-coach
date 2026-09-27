@@ -59,6 +59,13 @@
       .upload-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
       .upload-input:focus-visible + label { outline: 2px solid var(--teal); outline-offset: 2px; }
       .screenshot-queue { list-style: none; margin: 6px 0 0; padding: 0; max-height: 230px; overflow-y: auto; }
+      .screenshot-queue li { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; align-items: center; }
+      input.screenshot-merge-check, #confirmSameTrade { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 0; accent-color: var(--teal); }
+      .merge-acknowledgement { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; margin: 12px 0; }
+      #confirmSameTrade { flex: 0 0 18px; margin-top: 2px; }
+      .ocr-source { display: block; color: var(--muted); margin-top: 4px; font-size: 10px; overflow-wrap: anywhere; }
+      #mergeControls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+      #mergeControls .button { height: auto; padding: 8px 12px; }
       .screenshot-item { display: grid; grid-template-columns: minmax(0, 1fr) 68px; gap: 8px; align-items: center; width: 100%; min-height: 42px; padding: 8px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: transparent; color: var(--ink); font-size: 12px; }
       .screenshot-item[aria-pressed="true"] { background: var(--teal-pale); box-shadow: inset 3px 0 var(--teal); }
       .screenshot-name { overflow-wrap: anywhere; }
@@ -231,6 +238,7 @@
               </div>
               <p id="screenshotProgress" class="field-hint" role="status" aria-live="polite" hidden></p>
               <ul id="screenshotQueue" class="screenshot-queue" hidden></ul>
+              <div id="mergeControls" hidden><button id="mergeScreenshots" class="button" type="button" disabled>合并买入与卖出</button><span id="mergeCount" class="field-hint" role="status" aria-live="polite"></span></div>
               <div id="uploadPreview" class="upload-preview" hidden>
                 <img id="screenshotPreview" alt="" />
                 <div><div id="uploadMeta" class="upload-meta"></div><button id="removeScreenshot" class="button" type="button">移除图片</button></div>
@@ -240,6 +248,7 @@
                 <h3 id="screenshotReviewTitle">待核对的识别结果</h3>
                 <table><thead><tr id="screenshotReviewHead"></tr></thead><tbody id="screenshotReviewRows"></tbody></table>
                 <div id="screenshotReviewWarnings" class="field-hint"></div>
+                <label id="mergeAcknowledgement" class="merge-acknowledgement" hidden><input id="confirmSameTrade" type="checkbox" /><span id="mergeAcknowledgementText"></span></label>
                 <div class="button-row"><button id="confirmScreenshot" class="button primary" type="button">确认并替换表单</button><button id="cancelScreenshot" class="button" type="button">取消</button></div>
               </section>
             </div>
@@ -288,7 +297,7 @@
     </main>
 
     <script src="market-context.js"></script>
-    <script src="screenshot-review.js?v=2"></script>
+    <script src="screenshot-review.js?v=3"></script>
     <script>
       const byId = (id) => document.getElementById(id);
       const translations = {
