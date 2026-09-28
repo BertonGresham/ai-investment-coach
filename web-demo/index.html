@@ -191,6 +191,22 @@
       .book-note { padding: 12px 0; border-bottom: 1px solid #e4eae7; }
       .book-question { color: #165f50; }
       #klineSummary[readonly] { background: #f3f6f5; color: #4a5b55; min-height: 118px; }
+      .execution-scroll { max-width: 100%; overflow-x: auto; margin: 12px 0; }
+      .execution-table { border-collapse: collapse; width: 100%; min-width: 840px; font-size: 12px; table-layout: auto !important; }
+      .execution-table th, .execution-table td { border-bottom: 1px solid #dce2e1; padding: 9px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+      .execution-table th { font-weight: 600; }
+      .execution-table th, .execution-table td:not(:last-child) { white-space: nowrap; }
+      .execution-table td:last-child { min-width: 160px; max-width: 240px; }
+      .execution-editor th:first-child { min-width: 150px; max-width: 190px; white-space: normal; }
+      .execution-editor input { min-width: 85px; width: 100%; font-size: 12px; }
+      .execution-editor input[type="datetime-local"] { min-width: 205px; }
+      .execution-editor textarea { min-width: 160px; min-height: 76px; width: 100%; font-size: 12px; }
+      .execution-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0; }
+      .execution-metrics dt { color: #596763; font-size: 12px; }
+      .execution-metrics dd { margin: 5px 0 0; font-size: 15px; overflow-wrap: anywhere; }
+      .execution-ledger { min-width: 0; margin: 18px 0; padding: 15px 0; border-block: 1px solid #dce2e1; }
+      .execution-ledger h3 { font-size: 15px; margin: 10px 0; }
+      .execution-ledger [readonly] { background: #f1f5f3; }
     </style>
   </head>
   <body>
@@ -246,11 +262,16 @@
               <p id="ocrStatus" class="ocr-status" role="status" aria-live="polite" hidden></p>
               <section id="screenshotReview" class="ocr-review" aria-labelledby="screenshotReviewTitle" hidden>
                 <h3 id="screenshotReviewTitle">待核对的识别结果</h3>
-                <table><thead><tr id="screenshotReviewHead"></tr></thead><tbody id="screenshotReviewRows"></tbody></table>
+                <table id="screenshotFieldsTable"><thead><tr id="screenshotReviewHead"></tr></thead><tbody id="screenshotReviewRows"></tbody></table>
+                <div id="mergeExecutionDetails" hidden><div id="mergeExecutionEditor"></div><p id="mergeExecutionError" class="inline-error" role="alert" hidden></p><div id="mergeExecutionReport"></div></div>
                 <div id="screenshotReviewWarnings" class="field-hint"></div>
                 <label id="mergeAcknowledgement" class="merge-acknowledgement" hidden><input id="confirmSameTrade" type="checkbox" /><span id="mergeAcknowledgementText"></span></label>
                 <div class="button-row"><button id="confirmScreenshot" class="button primary" type="button">确认并替换表单</button><button id="cancelScreenshot" class="button" type="button">取消</button></div>
               </section>
+            </div>
+            <div id="activeLedger" class="execution-ledger" hidden>
+              <div id="activeExecutionEditor"></div><p id="activeExecutionError" class="inline-error" role="alert" hidden></p><div id="activeExecutionReport"></div>
+              <button id="clearExecutions" type="button" class="button"></button>
             </div>
             <div class="form-grid">
               <div class="field"><label for="market">市场</label><select id="market" name="market"><option value="US">美国</option><option value="KR">韩国</option><option value="CN">中国</option><option value="OTHER">其他</option></select></div>
@@ -273,7 +294,7 @@
               <div class="field wide"><label for="klineSummary">买入前行情摘要</label><textarea id="klineSummary" name="klineSummary" maxlength="2000" readonly></textarea><span id="klineHint" class="field-hint">仅取买入日期之前的日 K。</span></div>
             </div>
             <div class="form-footer">
-              <div class="button-row"><button class="button primary" id="analyzeButton" type="submit">分析这笔交易</button><button class="button" id="sampleButton" type="button">载入演示案例</button></div>
+              <div class="button-row"><button class="button primary" id="analyzeButton" type="submit">分析这笔交易</button><button class="button" id="sampleButton" type="button">载入演示案例</button><button class="button" id="executionSampleButton" type="button">分批演示案例</button></div>
               <div id="pnlPreview" class="pnl-inline" aria-live="polite"></div>
             </div>
             <p id="formError" class="inline-error" role="alert" hidden></p>
@@ -297,7 +318,8 @@
     </main>
 
     <script src="market-context.js"></script>
-    <script src="screenshot-review.js?v=3"></script>
+    <script src="execution-ledger.js?v=4"></script>
+    <script src="screenshot-review.js?v=4"></script>
     <script>
       const byId = (id) => document.getElementById(id);
       const translations = {
@@ -338,6 +360,7 @@
       let demoSampleActive = false;
       let reviewMarket = null;
       let screenshotReview = null;
+      let activeExecutions = null;
 
       function applyLanguage() {
         const copy = translations[language];
@@ -365,11 +388,13 @@
           const label = document.querySelector(`label[for="${id}"]`);
           if (label) label.textContent = value;
         });
+        renderActiveExecutions();
         [...byId("market").options].forEach((option, index) => { option.textContent = copy.markets[index]; });
         [...byId("buyReasonType").options].forEach((option, index) => { option.textContent = copy.reasonTypes[index]; });
         byId("klineSummary").parentElement.querySelector(".field-hint").textContent = copy.klineHint;
         byId("analyzeButton").textContent = copy.analyze;
         byId("sampleButton").textContent = copy.sample;
+        byId("executionSampleButton").textContent = language === "ko-KR" ? "분할 매매 데모" : "分批演示案例";
         byId("refreshProfile").textContent = copy.refreshProfile;
         document.querySelector(".profile-toolbar p").textContent = copy.profileToolbar;
         document.querySelector(".privacy-line").textContent = copy.privacy;
@@ -425,6 +450,8 @@
       }
       function loadSample() {
         screenshotReview?.clear();
+        activeExecutions = null;
+        renderActiveExecutions();
         const now = new Date();
         byId("market").value = "US";
         byId("symbol").value = "AAPL";
@@ -471,7 +498,8 @@
       });
       checkService();
 
-      function applyRecognizedFields({ fields }) {
+      function applyRecognizedFields({ fields, executions }) {
+        activeExecutions = executions ? executions.map((row) => ({ ...row })) : null;
         demoSampleActive = false;
         byId("formError").hidden = true;
         const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
@@ -488,10 +516,58 @@
         if (fields.sell_price != null) byId("sellPrice").value = fields.sell_price;
         if (fields.quantity != null) byId("quantity").value = fields.quantity;
         reviewMarket?.useLive();
+        renderActiveExecutions();
         updatePnl();
       }
 
+      function syncExecutionSummary() {
+        const error = byId("activeExecutionError");
+        error.hidden = true;
+        let summary = null;
+        if (activeExecutions) {
+          try {
+            summary = summarizeExecutions(activeExecutions, language);
+            const fields = executionTradeFields(summary);
+            const previousBuyTime = byId("buyTime").value;
+            for (const [id, key] of Object.entries({ buyTime: "buy_time", sellTime: "sell_time", buyPrice: "buy_price", sellPrice: "sell_price", quantity: "quantity" })) {
+              byId(id).value = key.endsWith("time") ? screenshotLocalTime(fields[key]) : fields[key] ?? "";
+            }
+            if (previousBuyTime !== byId("buyTime").value) reviewMarket?.invalidate();
+          } catch (problem) { error.textContent = problem.message; error.hidden = false; }
+        }
+        renderExecutionReport(byId("activeExecutionReport"), summary, language);
+        updatePnl();
+      }
+      function renderActiveExecutions() {
+        byId("activeLedger").hidden = !activeExecutions;
+        byId("clearExecutions").textContent = executionTexts(language).clear;
+        for (const id of ["buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"]) {
+          byId(id).readOnly = Boolean(activeExecutions);
+          document.querySelector(`label[for="${id}"]`).textContent = (activeExecutions ? executionTexts(language).labels : translations[language].labels)[id];
+        }
+        if (activeExecutions) {
+          renderExecutionEditor(byId("activeExecutionEditor"), activeExecutions, language, syncExecutionSummary, "active");
+          syncExecutionSummary();
+        } else {
+          byId("activeExecutionEditor").replaceChildren();
+          byId("activeExecutionReport").replaceChildren();
+        }
+      }
+      byId("clearExecutions").addEventListener("click", () => {
+        activeExecutions = null;
+        screenshotReview.clear();
+        for (const id of ["buyTime", "sellTime", "buyPrice", "sellPrice", "quantity", "buyReason", "sellReason"]) byId(id).value = "";
+        renderActiveExecutions(); reviewMarket.invalidate(); updatePnl();
+      });
+
       function updatePnl() {
+        if (activeExecutions) {
+          try {
+            const summary = summarizeExecutions(activeExecutions, language);
+            byId("pnlPreview").textContent = summary.realized_profit_loss === null ? "" : `${executionTexts(language).pnl} ${summary.realized_profit_loss.toFixed(2)}`;
+          } catch { byId("pnlPreview").textContent = ""; }
+          return;
+        }
         if (["buyPrice", "sellPrice", "quantity"].some((id) => !byId(id).value.trim())) {
           byId("pnlPreview").textContent = "";
           return;
@@ -509,6 +585,16 @@
       }
       ["buyPrice", "sellPrice", "quantity"].forEach((id) => byId(id).addEventListener("input", updatePnl));
       byId("sampleButton").addEventListener("click", loadSample);
+      byId("executionSampleButton").addEventListener("click", () => {
+        screenshotReview.clear();
+        const korean = language === "ko-KR";
+        const reasons = korean ? ["사전에 계획한 최초 매수", "미리 정한 조건에 따라 일부 매도", "하락 후 사전 조건 없이 추가 매수", "수정한 계획에 따라 일부 매도"] : ["按事先计划首次买入", "达到预设条件后部分卖出", "下跌后临时加仓，未记录事前条件", "按调整后的计划部分卖出"];
+        const rows = [["buy", 11, 100, 10], ["sell", 14, 120, 5], ["buy", 15, 80, 10], ["sell", 16, 110, 10]].map(([side, day, price, quantity], index) => ({
+          execution_id: `demo-${index + 1}`, side, time: `2026-09-${day}T10:00:00-04:00`, price, quantity, reason: reasons[index], source: korean ? "합성 데모" : "合成演示",
+        }));
+        applyRecognizedFields({ fields: { symbol: "AAPL", market: "US", buy_reason: korean ? "합성 데모이며 실제 거래가 아닙니다. 각 체결의 이유를 참고하세요." : "合成演示数据，非真实交易。各次理由以成交明细为准。" }, executions: rows });
+        reviewMarket.useDemo();
+      });
 
       function problem(code, name, severity, evidence, explanation, theory = null) {
         return { problem_code: code, problem_name: name, severity, evidence, explanation, theory_reference: theory };
@@ -539,6 +625,7 @@
           trade_id: data.trade_id,
           trade_time: data.trade.buy_time,
           analysis_type: "single_trade_behavior_analysis",
+          execution_summary: data.trade.executions ? summarizeExecutions(data.trade.executions, language) : null,
           behavior_summary: notable.length ? (korean ? `이번 기록에서 다음 가능성이 관찰됩니다: ${notable.map((item) => item.problem_name).join("; ")}.` : `本次记录可能体现出：${notable.map((item) => item.problem_name).join("；")}。`) : (korean ? "이번 기록만으로는 정보가 제한적이며 명확한 행동 문제는 확인되지 않았습니다." : "本次记录的信息有限，暂未发现明确的行为问题。"),
           detected_behavior_problems: problems,
           personality_tags: tags,
@@ -551,6 +638,7 @@
 
       function buildRequest() {
         const copy = translations[language];
+        const executionSummary = activeExecutions ? summarizeExecutions(activeExecutions, language) : null;
         const buyTime = new Date(byId("buyTime").value);
         const sellTimeValue = byId("sellTime").value;
         const sellPriceValue = byId("sellPrice").value;
@@ -582,11 +670,12 @@
             quantity,
             profit_loss_amount: profitLoss,
             profit_loss_rate: sellPrice === null ? null : Number(((sellPrice - buyPrice) / buyPrice).toFixed(6)),
+            ...(executionSummary ? { ...executionTradeFields(executionSummary), executions: executionPayload(activeExecutions) } : {}),
           },
           decision: {
             buy_reason: `${reasonType}：${buyReason}`,
             sell_reason: byId("sellReason").value.trim() || null,
-            planned_holding_period: language === "ko-KR" ? "당일 단타" : "当日短线",
+            planned_holding_period: null,
           },
           analysis_context: { language, risk_notice_required: true },
           ...reviewMarket.requestFields(),
@@ -637,6 +726,10 @@
         const badge = mode === "local" ? (language === "ko-KR" ? "로컬 규칙 시뮬레이션" : "本地规则模拟") : serviceAnalysisMode === "mock" ? (language === "ko-KR" ? "백엔드 Mock 모드" : "后端 Mock 模式") : (language === "ko-KR" ? "LLM 분석" : "LLM 服务分析");
         appendText(top, "span", `mode-badge${mode === "local" || serviceAnalysisMode === "mock" ? " local" : ""}`, badge);
         host.append(top);
+        if (result.execution_summary) {
+          const report = appendText(host, "div", "execution-ledger", "");
+          renderExecutionReport(report, result.execution_summary, language);
+        }
         appendText(host, "p", "summary", result.behavior_summary);
         appendText(host, "div", "subhead", tr("evidence"));
         const problems = document.createElement("div"); problems.className = "problem-list";

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const script = fs.readFileSync(path.join(__dirname, '../screenshot-review.js'), 'utf8');
+const script = ['execution-ledger.js', 'screenshot-review.js'].map((file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')).join('\n');
 function fixture(fetch) {
   const nodes = new Map();
   const revoked = [];
@@ -40,6 +40,7 @@ function fixture(fetch) {
   }
   return { ui, get, select, selectMany, applied, revoked, timers, time: context.screenshotLocalTime,
     mergeRecords: context.mergeScreenshotRecords,
+    summarize: context.summarizeExecutions,
     checkMerge(index, checked = true) {
       const target = get('screenshotQueue').children[index].children[1];
       target.checked = checked;
@@ -421,20 +422,23 @@ test('buy and sell screenshots merge by side regardless of upload order, with pr
   assert.equal(result.fields.buy_reason, null);
   assert.equal(result.fields.sell_reason, null);
   assert.equal(result.field_confidence.symbol, 0.8);
-  assert.deepEqual(Array.from(result.field_sources.buy_price), ['buy.png']);
-  assert.deepEqual(Array.from(result.field_sources.sell_price), ['sell.png']);
+  assert.equal(result.executions.find((row) => row.side === 'buy').source, 'buy.png');
+  assert.equal(result.executions.find((row) => row.side === 'sell').source, 'sell.png');
   assert.equal(JSON.stringify(entries), before);
 });
 
-test('different stocks, markets, quantities, and reversed execution instants block merging', () => {
+test('different stocks and markets block merging; incomplete executions remain correctable', () => {
   const f = fixture();
   for (const [fields, key] of [
     [{ symbol: 'MSFT' }, 'mergeSymbol'], [{ market: 'KR' }, 'mergeMarket'],
-    [{ quantity: 5 }, 'mergeQuantity'], [{ quantity: 0 }, 'mergeQuantity'],
-    [{ quantity: '10' }, 'mergeQuantity'], [{ quantity: 1.5 }, 'mergeQuantity'],
-    [{ sell_time: '2026-09-15T12:00:00Z' }, 'mergeTime'],
   ]) assert.equal(f.mergeRecords([execution('buy'), execution('sell', fields)]).error, key);
   assert.equal(f.mergeRecords([execution('buy'), execution('sell', { symbol: ' aapl ', market: 'us' })]).result.fields.symbol, 'AAPL');
+  for (const fields of [{ quantity: 0 }, { quantity: '10' }, { quantity: 1.5 }, { sell_time: '2026-09-15T12:00:00Z' }]) {
+    const { result } = f.mergeRecords([execution('buy'), execution('sell', fields)]);
+    assert.throws(() => f.summarize(result.executions));
+  }
+  const partial = f.mergeRecords([execution('buy'), execution('sell', { quantity: 5 })]);
+  assert.equal(f.summarize(partial.result.executions).remaining_quantity, 5);
 });
 
 test('missing identity warns and unpaired quantities remain empty instead of implying a full exit', () => {
@@ -443,16 +447,15 @@ test('missing identity warns and unpaired quantities remain empty instead of imp
   assert.equal(result.fields.symbol, 'AAPL');
   assert.equal(result.fields.quantity, null);
   assert.equal(result.field_confidence.quantity, undefined);
-  assert.deepEqual(Array.from(result.merge_warnings), ['mergeIdentity', 'mergeMissingQuantity']);
-  assert.equal(f.time(result.fields.sell_time), '');
+  assert.deepEqual(Array.from(result.merge_warnings), ['mergeIdentity']);
+  assert.equal(result.executions[1].quantity, null);
+  assert.equal(result.executions[1].time, '2026-09-16');
 });
 
-test('cash flows, unknown records, same sides, full round trips and more than two records cannot merge', () => {
+test('cash flows, unknown records and selections outside 2 to 10 cannot merge', () => {
   const f = fixture();
   for (const entries of [
-    [], [execution('buy')], [execution('buy'), execution('buy')],
-    [execution('buy'), execution('round_trip')], [execution('buy'), execution('unknown')],
-    [execution('buy'), execution('sell'), execution('sell')],
+    [], [execution('buy')], [execution('buy'), execution('unknown')], Array.from({ length: 11 }, () => execution('buy')),
     [execution('buy'), { ...execution('sell'), result: { ...execution('sell').result, status: 'not_trade', record: { kind: 'cash_flow', side: 'sell' } } }],
   ]) assert.equal(f.mergeRecords(entries).error, 'mergeSides');
 });
@@ -478,9 +481,9 @@ test('a merged review requires same-position acknowledgement and fills both side
   assert.throws(() => f.ui.assertReady(), /确认/);
   f.click('confirmScreenshot');
   assert.equal(f.applied.length, 0);
-  const rows = f.get('screenshotReviewRows').children;
-  assert.match(rows[4].children[1].children[0].textContent, /buy.png/);
-  assert.match(rows[5].children[1].children[0].textContent, /sell.png/);
+  const rows = f.get('mergeExecutionEditor').children[0].children[0].children[1].children;
+  assert.match(rows[0].children[0].textContent, /buy.png/);
+  assert.match(rows[1].children[0].textContent, /sell.png/);
   f.choose(1);
   assert.match(f.get('screenshotReviewTitle').textContent, /合并/);
   f.acknowledge();
@@ -514,7 +517,7 @@ test('selection or source changes invalidate merged acknowledgement and prevent 
 });
 
 test('conflicts stay visible, cannot be acknowledged away, and do not fall back to applying one side', async () => {
-  for (const fields of [{ symbol: 'MSFT' }, { market: 'KR' }, { quantity: 5 }, { sell_time: '2026-09-14T10:00:00-04:00' }]) {
+  for (const fields of [{ symbol: 'MSFT' }, { market: 'KR' }]) {
     const f = await mergeFixture(fields);
     assert.equal(f.get('ocrStatus').dataset.state, 'error');
     assert.match(f.get('ocrStatus').textContent, /不能合并/);
@@ -531,7 +534,7 @@ test('language switches localize the merged review and require renewed acknowled
   f.acknowledge();
   f.setLanguage('ko-KR');
   assert.match(f.get('screenshotReviewTitle').textContent, /합친/);
-  assert.match(f.get('mergeAcknowledgementText').textContent, /동일한/);
+  assert.match(f.get('mergeAcknowledgementText').textContent, /같은 계좌/);
   assert.equal(f.get('confirmSameTrade').checked, false);
   assert.equal(f.get('confirmScreenshot').disabled, true);
   assert.equal(f.get('screenshotReviewRows').children[5].children[1].textContent, '198');
@@ -555,4 +558,53 @@ test('cancelled merging preserves the form and cash flows cannot enter the selec
   assert.equal(cash.get('mergeScreenshots').disabled, true);
   cash.click('mergeScreenshots');
   assert.equal(cash.get('mergeAcknowledgement').hidden, true);
+});
+
+test('four screenshots preserve interleaved executions and quantity-weighted partial P&L', async () => {
+  const data = [execution('buy', { buy_price: 100, buy_time: '2026-09-11T10:00:00Z' }),
+    execution('sell', { sell_price: 120, quantity: 5, sell_time: '2026-09-12T10:00:00Z' }),
+    execution('buy', { buy_price: 80, buy_time: '2026-09-13T10:00:00Z' }),
+    execution('sell', { sell_price: 110, sell_time: '2026-09-14T10:00:00Z' })];
+  const f = fixture(async (_, options) => response(data[Number(options.body.get('file').name[0])].result));
+  f.selectMany(data.map((_, i) => ({ name: `${i}.png` })));
+  await f.recognize();
+  for (let i = 0; i < 4; i++) f.checkMerge(i);
+  assert.equal(f.get('mergeScreenshots').disabled, false);
+  f.click('mergeScreenshots'); f.acknowledge(); f.click('confirmScreenshot');
+  const result = f.applied[0];
+  assert.equal(result.executions.length, 4);
+  const summary = f.summarize(result.executions);
+  assert.equal(summary.average_buy_price, 90);
+  assert.equal(summary.average_sell_price, 113.33333333);
+  assert.equal(summary.realized_profit_loss, 333.33333333);
+  assert.equal(summary.remaining_average_cost, 86.66666667);
+  assert.equal(summary.remaining_quantity, 5);
+  assert.deepEqual(Array.from(summary.timeline, (row) => row.occurrence), [1, 1, 2, 2]);
+  f.ui.assertReady();
+});
+
+test('invalid quantities stay editable and each correction revokes acknowledgement', async () => {
+  const f = await mergeFixture({ quantity: 11 });
+  assert.equal(f.get('mergeExecutionError').hidden, false);
+  f.acknowledge(); f.click('confirmScreenshot');
+  assert.equal(f.applied.length, 0);
+  const input = f.get('mergeExecutionEditor').children[0].children[0].children[1].children[1].children[3].children[0];
+  input.value = '5'; input.listeners.input();
+  f.get('tradeForm').listeners.input({ target: input });
+  assert.equal(f.get('mergeAcknowledgement').hidden, false);
+  assert.equal(f.get('confirmSameTrade').checked, false);
+  assert.equal(f.get('mergeExecutionError').hidden, true);
+  f.acknowledge(); f.click('confirmScreenshot');
+  assert.equal(f.applied[0].executions[1].quantity, 5);
+});
+
+test('open positions, round trips and duplicates are handled explicitly', () => {
+  const f = fixture();
+  const open = f.mergeRecords([execution('buy'), execution('buy', { buy_price: 100, quantity: 30, buy_time: '2026-09-17T10:00:00Z' })]).result;
+  assert.equal(f.summarize(open.executions).average_buy_price, 125);
+  assert.equal(f.summarize(open.executions).realized_profit_loss, null);
+  const trip = f.mergeRecords([execution('round_trip', { buy_time: '2026-09-10T10:00:00Z', sell_time: '2026-09-11T10:00:00Z', buy_price: 100, sell_price: 110 }), execution('buy')]).result;
+  assert.equal(trip.executions.length, 3);
+  assert.equal(f.summarize(trip.executions).remaining_quantity, 10);
+  assert.throws(() => f.summarize(f.mergeRecords([execution('buy'), execution('buy')]).result.executions), /重复/);
 });

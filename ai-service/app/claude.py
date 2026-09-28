@@ -38,13 +38,13 @@ def claude_json(
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
     if vision:
         model = os.getenv("ANTHROPIC_VISION_MODEL") or model
-    with Client(timeout=45.0, follow_redirects=False) as client:
+    with Client(timeout=45.0 if vision else 90.0, follow_redirects=False) as client:
         response = client.post(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
             json={
                 "model": model,
-                "max_tokens": 1600 if vision else 2500,
+                "max_tokens": 1600 if vision else 4096,
                 "system": system,
                 "messages": [{"role": "user", "content": content}],
                 "output_config": {"format": {"type": "json_schema", "schema": _output_schema(schema)}},

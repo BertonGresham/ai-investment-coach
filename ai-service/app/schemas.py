@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+from app.executions import summarize_executions
 
 
 class StrictModel(BaseModel):
@@ -16,7 +18,47 @@ class Stock(StrictModel):
     market: str | None = Field(default=None, max_length=24)
 
 
+class Execution(StrictModel):
+    execution_id: str = Field(min_length=1, max_length=100)
+    side: Literal["buy", "sell"]
+    time: str = Field(min_length=1, max_length=40)
+    price: float = Field(ge=0.00000001, le=1_000_000_000_000, allow_inf_nan=False)
+    quantity: int = Field(gt=0, le=100_000_000, strict=True)
+    reason: str | None = Field(default=None, max_length=1_000)
+
+    @field_validator("time")
+    @classmethod
+    def require_exact_time(cls, value: str) -> str:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if "T" not in value or parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("Each execution requires an exact time with timezone; date-only values are not sufficient.")
+        return value
+
+
+class ExecutionStep(Execution):
+    occurrence: int
+    remaining_quantity: int
+    realized_profit_loss: float | None
+
+
+class ExecutionSummary(StrictModel):
+    accounting_method: Literal["moving_weighted_average_excluding_fees_taxes_fx"]
+    buy_count: int
+    sell_count: int
+    total_bought: int
+    total_sold: int
+    remaining_quantity: int
+    average_buy_price: float
+    average_sell_price: float | None
+    remaining_cost_basis: float
+    remaining_average_cost: float | None
+    realized_profit_loss: float | None
+    realized_profit_loss_rate: float | None
+    timeline: list[ExecutionStep]
+
+
 class Trade(StrictModel):
+    executions: list[Execution] | None = Field(default=None, min_length=1, max_length=100)
     buy_time: str = Field(min_length=1, max_length=40)
     sell_time: str | None = Field(default=None, max_length=40)
     buy_price: float = Field(gt=0, allow_inf_nan=False)
@@ -24,6 +66,31 @@ class Trade(StrictModel):
     quantity: int = Field(gt=0, le=100_000_000)
     profit_loss_amount: float | None = Field(default=None, allow_inf_nan=False)
     profit_loss_rate: float | None = Field(default=None, allow_inf_nan=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_execution_totals(cls, value):
+        if not isinstance(value, dict) or value.get("executions") is None:
+            return value
+        entries = value["executions"]
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
+            raise ValueError("executions must contain between 1 and 100 records.")
+        parsed = [Execution.model_validate(row).model_dump() for row in entries]
+        summary = summarize_executions(parsed)
+        buys = [row for row in summary["timeline"] if row["side"] == "buy"]
+        sells = [row for row in summary["timeline"] if row["side"] == "sell"]
+        return {**value, "executions": parsed,
+                "buy_time": buys[0]["time"], "sell_time": sells[-1]["time"] if sells else None,
+                "buy_price": summary["average_buy_price"], "sell_price": summary["average_sell_price"],
+                "quantity": summary["total_bought"], "profit_loss_amount": summary["realized_profit_loss"],
+                "profit_loss_rate": summary["realized_profit_loss_rate"]}
+
+    @computed_field
+    @property
+    def execution_summary(self) -> ExecutionSummary | None:
+        if not self.executions:
+            return None
+        return ExecutionSummary.model_validate(summarize_executions([row.model_dump() for row in self.executions]))
 
     @field_validator("buy_time", "sell_time")
     @classmethod
@@ -120,6 +187,7 @@ class Uncertainty(StrictModel):
 
 
 class TradeAnalysisResponse(StrictModel):
+    execution_summary: ExecutionSummary | None = None
     trade_id: str = Field(min_length=1, max_length=100)
     trade_time: str = Field(min_length=1, max_length=40)
     analysis_type: Literal["single_trade_behavior_analysis"]

@@ -10,10 +10,7 @@ function screenshotLocalTime(value) {
 }
 
 function mergeScreenshotRecords(entries) {
-  if (entries.length !== 2 || entries.some(({ result }) => result?.status !== "recognized" || result.record?.kind !== "security_trade")) return { error: "mergeSides" };
-  const buy = entries.find(({ result }) => result.record.side === "buy");
-  const sell = entries.find(({ result }) => result.record.side === "sell");
-  if (!buy || !sell) return { error: "mergeSides" };
+  if (entries.length < 2 || entries.length > 10 || entries.some(({ result }) => result?.status !== "recognized" || result.record?.kind !== "security_trade" || !["buy", "sell", "round_trip"].includes(result.record.side))) return { error: "mergeSides" };
   const fields = Object.fromEntries(screenshotFieldNames.map((key) => [key, null]));
   const sources = {};
   const confidence = {};
@@ -30,24 +27,18 @@ function mergeScreenshotRecords(entries) {
     const values = known.map((entry) => String(entry.result.fields[key]).trim().toUpperCase());
     if (new Set(values).size > 1) return { error: key === "symbol" ? "mergeSymbol" : "mergeMarket" };
     if (known.length) copyField(key, known, values[0]);
-    if (known.length < 2 && !mergeWarnings.includes("mergeIdentity")) mergeWarnings.push("mergeIdentity");
+    if (known.length < entries.length && !mergeWarnings.includes("mergeIdentity")) mergeWarnings.push("mergeIdentity");
   }
-  const quantities = entries.map((entry) => entry.result.fields?.quantity);
-  if (quantities.some((value) => present(value) && (!Number.isInteger(value) || value <= 0))) return { error: "mergeQuantity" };
-  if (quantities.every(present)) {
-    if (quantities[0] !== quantities[1]) return { error: "mergeQuantity" };
-    copyField("quantity", entries, quantities[0]);
-  } else mergeWarnings.push("mergeMissingQuantity");
-  // Each side owns its own execution fields; never copy the other side's guesses.
-  for (const [side, entry] of [["buy", buy], ["sell", sell]]) {
-    for (const suffix of ["time", "price", "reason"]) {
-      const key = `${side}_${suffix}`;
-      if (present(entry.result.fields?.[key])) copyField(key, [entry], entry.result.fields[key]);
-    }
-  }
-  if (screenshotLocalTime(fields.buy_time) && screenshotLocalTime(fields.sell_time) && new Date(fields.sell_time) < new Date(fields.buy_time)) return { error: "mergeTime" };
+  const executions = entries.flatMap((entry, index) => {
+    const sides = entry.result.record.side === "round_trip" ? ["buy", "sell"] : [entry.result.record.side];
+    return sides.map((side) => ({ execution_id: `leg-${index + 1}-${side}`, side,
+      time: entry.result.fields?.[`${side}_time`] ?? null, price: entry.result.fields?.[`${side}_price`] ?? null,
+      quantity: entry.result.fields?.quantity ?? null, reason: entry.result.fields?.[`${side}_reason`] ?? null, source: entry.name }));
+  });
+  try { Object.assign(fields, executionTradeFields(summarizeExecutions(executions))); } catch { /* Reviewed and corrected per execution before confirmation. */ }
   return { result: {
     status: "recognized", record: { kind: "security_trade", side: "round_trip", label: null }, fields,
+    executions,
     field_confidence: confidence, field_sources: sources, merge_warnings: mergeWarnings,
     warnings: entries.flatMap((entry) => [entry.result.notice, ...(entry.result.warnings || [])]
       .filter((message) => typeof message === "string" && message).map((message) => `${entry.name}: ${message}`)),
@@ -62,17 +53,14 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
       stop: "停止识别", clear: "清空图片", stopped: "已停止，已完成的结果仍保留。", limit: "最多选择 10 张图片，合计不超过 32 MB；原图片列表未改变。",
       queued: "请先识别当前图片，或移除图片后手动分析。", progress: (done, total) => `已处理 ${done} / ${total} 张`,
       states: { queued: "待识别", reading: "识别中", ready: "待核对", cashFlow: "资金流水", unclassified: "类型不明", error: "识别失败", applied: "已填入", cancelled: "已取消" },
-      merge: "合并买入与卖出", mergeCount: (count) => `已勾选 ${count} / 2 张`, include: "参与合并：", source: "来源：",
+      merge: "合并所选成交", mergeCount: (count) => `已勾选 ${count} 张`, include: "参与合并：", source: "来源：",
       sides: { buy: "买入", sell: "卖出", round_trip: "完整买卖" },
-      mergedTitle: "合并后的交易 · 待核对", confirmMerged: "确认合并并填入表单", mergedApplied: "已合并买入与卖出并填入表单，请补全空白项和交易理由。",
-      acknowledge: "我确认这两张图属于同一持仓的等量买入和卖出。",
-      mergeSides: "请选择一张买入成交图和一张卖出成交图；资金流水、同方向交易和已包含完整买卖的截图不能这样合并。",
-      mergeSymbol: "股票代码不一致，不能合并。请核对两张图是否属于同一股票。",
-      mergeMarket: "市场不一致，不能合并。请核对两张图是否属于同一市场。",
-      mergeQuantity: "买卖股数不同或无效，不能合并为完整交易。部分卖出、分批成交需单独整理。",
-      mergeTime: "卖出时间早于买入时间，不能合并。请核对成交记录。",
-      mergeIdentity: "至少一张图缺少股票或市场，无法完整比对。确认前请核实两张原图的股票和账户。",
-      mergeMissingQuantity: "至少一张图缺少股数，合并后的股数留空。请核实两笔数量相同后手动补充。",
+      mergedTitle: "合并后的交易 · 待核对", confirmMerged: "确认合并并填入表单", mergedApplied: "已合并所选成交明细并填入表单，请补全交易理由。",
+      acknowledge: "我已核对每笔成交，确认属于同一账户、股票、市场和币种，且从首次买入起没有遗漏或重复。相同时刻的成交按列表顺序计算。",
+      mergeSides: "请选择至少两张股票成交记录；资金流水和类型不明的图片不能合并。",
+      mergeSymbol: "股票代码不一致，不能合并。请核对所选图片是否属于同一股票。",
+      mergeMarket: "市场不一致，不能合并。请核对所选图片是否属于同一市场。",
+      mergeIdentity: "至少一张图缺少股票或市场，无法完整比对。确认前请核实所选原图的股票和账户。",
       columns: ["字段", "截图内容", "模型自评分"],
       fields: ["股票代码", "市场", "买入时间", "卖出时间", "买入价格", "卖出价格", "股数", "买入理由", "卖出理由"],
       missing: "未识别", review: "待核对", score: "自评分不是准确率。缺失字段不会沿用原表单内容。",
@@ -94,17 +82,14 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
       stop: "인식 중지", clear: "이미지 비우기", stopped: "중지했습니다. 완료된 결과는 유지됩니다.", limit: "최대 10장, 합계 32MB까지 선택할 수 있습니다. 기존 이미지 목록은 유지됩니다.",
       queued: "현재 이미지를 인식하거나 제거한 뒤 직접 분석하세요.", progress: (done, total) => `${done} / ${total}장 처리됨`,
       states: { queued: "인식 대기", reading: "인식 중", ready: "확인 필요", cashFlow: "자금 내역", unclassified: "종류 불명", error: "인식 실패", applied: "입력 완료", cancelled: "취소됨" },
-      merge: "매수·매도 합치기", mergeCount: (count) => `${count} / 2장 선택`, include: "합치기에 포함: ", source: "출처: ",
+      merge: "선택한 체결 합치기", mergeCount: (count) => `${count}장 선택`, include: "합치기에 포함: ", source: "출처: ",
       sides: { buy: "매수", sell: "매도", round_trip: "매수·매도" },
-      mergedTitle: "합친 거래 · 확인 필요", confirmMerged: "합친 거래 확인 후 입력", mergedApplied: "매수와 매도를 합쳐 입력했습니다. 빈 항목과 매매 이유를 보완하세요.",
-      acknowledge: "두 이미지가 동일한 보유분의 같은 수량 매수·매도임을 확인했습니다.",
-      mergeSides: "매수 체결 1장과 매도 체결 1장을 선택하세요. 자금 내역, 같은 방향의 거래, 이미 매수·매도가 합쳐진 이미지는 결합할 수 없습니다.",
+      mergedTitle: "합친 거래 · 확인 필요", confirmMerged: "합친 거래 확인 후 입력", mergedApplied: "선택한 체결 내역을 합쳐 입력했습니다. 매매 이유를 보완하세요.",
+      acknowledge: "각 체결이 같은 계좌·종목·시장·통화이며 최초 매수부터 누락이나 중복이 없음을 확인했습니다. 같은 시각의 체결은 목록 순서로 계산합니다.",
+      mergeSides: "주식 체결 이미지를 2장 이상 선택하세요. 자금 내역이나 종류가 불명확한 이미지는 합칠 수 없습니다.",
       mergeSymbol: "종목 코드가 달라 합칠 수 없습니다. 같은 종목인지 확인하세요.",
       mergeMarket: "시장이 달라 합칠 수 없습니다. 같은 시장인지 확인하세요.",
-      mergeQuantity: "매수·매도 수량이 다르거나 유효하지 않아 완결 거래로 합칠 수 없습니다. 부분 매도와 분할 체결은 따로 정리하세요.",
-      mergeTime: "매도 시간이 매수 시간보다 빨라 합칠 수 없습니다. 체결 내역을 확인하세요.",
-      mergeIdentity: "종목이나 시장이 누락된 이미지가 있어 완전한 비교가 불가능합니다. 확인 전에 두 원본의 종목과 계좌를 확인하세요.",
-      mergeMissingQuantity: "수량이 누락된 이미지가 있어 합친 수량은 비워 둡니다. 두 거래의 수량이 같은지 확인한 후 직접 입력하세요.",
+      mergeIdentity: "종목이나 시장이 누락된 이미지가 있어 완전한 비교가 불가능합니다. 확인 전에 선택한 원본의 종목과 계좌를 확인하세요.",
       columns: ["항목", "스크린샷 내용", "모델 자체 점수"],
       fields: ["종목 코드", "시장", "매수 시간", "매도 시간", "매수 가격", "매도 가격", "수량", "매수 이유", "매도 이유"],
       missing: "미인식", review: "확인 필요", score: "자체 점수는 정확도가 아닙니다. 누락된 항목은 기존 입력값을 사용하지 않습니다.",
@@ -154,12 +139,12 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     el("clearScreenshots").hidden = !items.length;
     el("mergeControls").hidden = items.length < 2;
     el("mergeScreenshots").textContent = text().merge;
-    el("mergeScreenshots").disabled = running || mergeSelection.size !== 2;
+    el("mergeScreenshots").disabled = running || mergeSelection.size < 2;
     el("mergeCount").textContent = text().mergeCount(mergeSelection.size);
     el("mergeAcknowledgement").hidden = !mergedDraft;
     el("mergeAcknowledgementText").textContent = text().acknowledge;
     el("confirmScreenshot").textContent = mergedDraft ? text().confirmMerged : text().confirm;
-    el("confirmScreenshot").disabled = running || (mergedDraft ? !el("confirmSameTrade").checked : mergeSelection.size > 0);
+    el("confirmScreenshot").disabled = running || (mergedDraft ? !el("confirmSameTrade").checked || !mergedDraft.valid : mergeSelection.size > 0);
     el("cancelScreenshot").textContent = text().cancel;
     el("removeScreenshot").textContent = text().remove;
     el("screenshotReviewTitle").textContent = mergedDraft ? text().mergedTitle : text().title;
@@ -195,9 +180,34 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     el("confirmSameTrade").checked = false;
   }
   function canMerge(item) {
-    return ["ready", "applied", "cancelled"].includes(item.state) && item.result?.record?.kind === "security_trade" && ["buy", "sell"].includes(item.result.record.side);
+    return ["ready", "applied", "cancelled"].includes(item.state) && item.result?.record?.kind === "security_trade" && ["buy", "sell", "round_trip"].includes(item.result.record.side);
+  }
+  function validateMerged() {
+    if (!mergedDraft) return;
+    let summary = null;
+    try {
+      summary = summarizeExecutions(mergedDraft.result.executions, getLanguage());
+      Object.assign(mergedDraft.result.fields, executionTradeFields(summary));
+      mergedDraft.valid = true;
+      el("mergeExecutionError").textContent = "";
+    } catch (error) {
+      mergedDraft.valid = false;
+      el("mergeExecutionError").textContent = error.message;
+    }
+    el("mergeExecutionError").hidden = mergedDraft.valid;
+    renderExecutionReport(el("mergeExecutionReport"), summary, getLanguage());
+    controls();
   }
   function render() {
+    el("screenshotFieldsTable").hidden = Boolean(mergedDraft);
+    el("mergeExecutionDetails").hidden = !mergedDraft;
+    if (mergedDraft) {
+      renderExecutionEditor(el("mergeExecutionEditor"), mergedDraft.result.executions, getLanguage(), () => {
+        el("confirmSameTrade").checked = false;
+        validateMerged();
+      }, "review");
+      validateMerged();
+    }
     const heads = el("screenshotReviewHead");
     heads.replaceChildren();
     text().columns.forEach((label) => { add(heads, "th", label).scope = "col"; });
@@ -350,7 +360,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
   el("stopScreenshots").addEventListener("click", () => { stop(); refresh(); status("stopped"); });
   el("clearScreenshots").addEventListener("click", clear);
   el("mergeScreenshots").addEventListener("click", () => {
-    if (running || mergeSelection.size !== 2) return;
+    if (running || mergeSelection.size < 2) return;
     const members = [...mergeSelection];
     if (members.some((item) => !items.includes(item) || !canMerge(item))) return;
     const merged = mergeScreenshotRecords(members.map((item) => ({ name: item.file.name, result: item.result })));
@@ -379,7 +389,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     refresh();
   });
   el("confirmScreenshot").addEventListener("click", () => {
-    if (!draft || running || (mergedDraft ? !el("confirmSameTrade").checked : mergeSelection.size > 0)) return;
+    if (!draft || running || (mergedDraft ? !el("confirmSameTrade").checked || !mergedDraft.valid : mergeSelection.size > 0)) return;
     const result = draft;
     const members = mergedDraft?.members || [selected];
     const wasMerged = Boolean(mergedDraft);

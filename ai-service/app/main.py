@@ -344,6 +344,7 @@ def llm_behavior_analysis(
             req.market_snapshot.trend_before_buy or "",
             req.market_snapshot.volume_price_summary or "",
             req.market_snapshot.kline_summary or "",
+            " ".join(row.reason for row in (req.trade.executions or []) if row.reason),
         )
         if value
     )
@@ -351,11 +352,22 @@ def llm_behavior_analysis(
     payload = build_analysis_payload(req, retrieved)
     try:
         if _llm_provider() == "anthropic":
+            schema = TradeAnalysisResponse.model_json_schema()
+            schema["properties"].pop("execution_summary")
+            for name in ("ExecutionSummary", "ExecutionStep"):
+                schema.get("$defs", {}).pop(name, None)
+            # Keep the grammar simple; validate narrative completeness after decoding.
+            prose_schemas = [schema["properties"][name] for name in ("behavior_summary", "risk_notice")]
+            prose_schemas += [schema["properties"][name]["items"] for name in ("coaching_advice", "reflection_questions")]
+            prose_schemas += [schema["$defs"]["BehaviorProblem"]["properties"][name] for name in ("evidence", "explanation")]
+            prose_schemas.append(schema["$defs"]["Uncertainty"]["properties"]["reason"])
+            for prose in prose_schemas:
+                prose["description"] = "Complete sentences in the requested language. For quotations use corner brackets like 「text」, never ASCII double quotes inside string values. End with a period, question mark or exclamation mark."
             raw_result = claude_json(
                 api_key=api_key,
                 system=SYSTEM_PROMPT,
                 content=build_user_prompt(payload),
-                schema=TradeAnalysisResponse.model_json_schema(),
+                schema=schema,
             )
         else:
             with OpenAI(
@@ -384,8 +396,18 @@ def llm_behavior_analysis(
         raw_result["trade_id"] = req.trade_id
         raw_result["trade_time"] = req.trade.buy_time
         raw_result["analysis_type"] = "single_trade_behavior_analysis"
+        raw_result["execution_summary"] = req.trade.execution_summary
         _keep_supported_theory_references(raw_result, [*req.rag_context, *retrieved])
-        return TradeAnalysisResponse.model_validate(raw_result)
+        result = TradeAnalysisResponse.model_validate(raw_result)
+        if not all((result.behavior_summary, result.risk_notice, result.uncertainty.reason)) or not any(line.strip() for line in result.coaching_advice) or not any(line.strip() for line in result.reflection_questions):
+            raise ValueError("The analysis is incomplete; required coaching or limitations are missing.")
+        narratives = [result.behavior_summary, result.risk_notice, result.uncertainty.reason, *result.coaching_advice, *result.reflection_questions]
+        narratives += [text for problem in result.detected_behavior_problems for text in (problem.evidence, problem.explanation)]
+        if any(not line.rstrip().endswith(tuple("。！？.!?")) for line in narratives):
+            raise ValueError("The analysis contains unfinished narrative fields.")
+        # A single grouped position is still only one behavioral sample.
+        result.uncertainty.level = "high"
+        return result
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         logger.error("The model returned an invalid analysis payload (%s).", type(exc).__name__)
         raise HTTPException(
@@ -494,6 +516,7 @@ def mock_behavior_analysis(req: TradeAnalysisRequest) -> TradeAnalysisResponse:
         else ("이번 기록만으로는 정보가 제한적이며 명확한 행동 문제는 확인되지 않았습니다." if korean else "本次记录的信息有限，暂未发现明确的行为问题。")
     )
     return TradeAnalysisResponse(
+        execution_summary=req.trade.execution_summary,
         trade_id=req.trade_id,
         trade_time=req.trade.buy_time,
         analysis_type="single_trade_behavior_analysis",
