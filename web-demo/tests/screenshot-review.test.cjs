@@ -41,6 +41,7 @@ function fixture(fetch) {
   return { ui, get, select, selectMany, applied, revoked, timers, time: context.screenshotLocalTime,
     mergeRecords: context.mergeScreenshotRecords,
     summarize: context.summarizeExecutions,
+    setTime: context.setRecordedTimeInput, readTime: context.readRecordedTimeInput, formatTime: context.formatRecordedTime,
     checkMerge(index, checked = true) {
       const target = get('screenshotQueue').children[index].children[1];
       target.checked = checked;
@@ -143,6 +144,56 @@ test('date-only and timezone-free values never become invented midnight times', 
   for (const value of [null, '', '2025-07-25', '2025-07-25T10:30:00', 'not-a-date']) assert.equal(f.time(value), '');
   const input = '2025-07-25T10:30:45-04:00';
   assert.equal(new Date(f.time(input)).getTime(), new Date(input).getTime());
+});
+
+test('recorded date and local clock prefill without inventing midnight or timezone', () => {
+  const f = fixture(), input = f.get('testTime');
+  for (const value of ['2026-05-13', '2026-05-13T11:30:00', '2026-05-13T11:30:00+09:00']) {
+    f.setTime(input, value);
+    assert.equal(f.readTime(input), value);
+    assert.equal(input.type, value.length === 10 ? 'date' : 'datetime-local');
+  }
+  f.setTime(input, '2026-02-30');
+  assert.equal(input.value, '');
+  assert.equal(f.formatTime('2026-05-13', 'zh-CN'), '2026-05-13 (时刻未记录)');
+  assert.doesNotMatch(f.formatTime('2026-05-13', 'ko-KR'), /00:00/);
+});
+
+test('date-only screenshots merge without manual time or reason entry', async () => {
+  const entries = [execution('sell', { sell_time: '2026-05-14' }), execution('buy', { buy_time: '2026-05-13' })];
+  let i = 0;
+  const f = fixture(async () => response(entries[i++].result));
+  f.selectMany(entries); await f.recognize();
+  f.checkMerge(0); f.checkMerge(1); f.click('mergeScreenshots');
+  assert.equal(f.get('mergeExecutionError').hidden, true);
+  f.acknowledge(); f.click('confirmScreenshot');
+  assert.equal(f.applied[0].fields.buy_time, '2026-05-13');
+  assert.equal(f.applied[0].executions[0].reason, null);
+  assert.equal(f.applied[0].execution_order_confirmed, true);
+});
+
+test('same-day date-only rows require explicit order confirmation', async () => {
+  const entries = [execution('buy', { buy_time: '2026-05-13' }), execution('sell', { sell_time: '2026-05-13' })];
+  let i = 0;
+  const f = fixture(async () => response(entries[i++].result));
+  f.selectMany(entries); await f.recognize();
+  f.checkMerge(0); f.checkMerge(1); f.click('mergeScreenshots');
+  assert.equal(f.get('confirmScreenshot').disabled, true);
+  assert.match(f.get('mergeExecutionError').textContent, /顺序/);
+  f.acknowledge();
+  assert.equal(f.get('confirmScreenshot').disabled, false);
+  f.click('confirmScreenshot');
+  assert.equal(f.summarize(f.applied[0].executions, 'zh-CN', true).realized_profit_loss, -20);
+});
+
+test('visible details and computed fields are labeled and currency conflicts blocked', async () => {
+  const f = fixture(async () => response({ details: { fee: 395, tax: 0 }, derived_fields: ['buy_price'] }));
+  f.select(); await f.recognize();
+  assert.match(f.get('screenshotReviewRows').children[4].children[1].children[0].textContent, /计算/);
+  assert.equal(f.get('screenshotReviewRows').children.length, 11);
+  const a = execution('buy'), b = execution('sell');
+  a.result.details = {currency:'USD'}; b.result.details = {currency:'KRW'};
+  assert.equal(f.mergeRecords([a,b]).error, 'mergeCurrency');
 });
 
 test('replacing image ignores late success and revokes old preview', async () => {

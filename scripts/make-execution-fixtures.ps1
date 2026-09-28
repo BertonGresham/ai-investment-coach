@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = (Join-Path $env:TEMP 'ai-coach-execution-fixtures'))
+param([string]$OutputDirectory = (Join-Path $env:TEMP 'ai-coach-execution-fixtures'), [switch]$DateOnly)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $null = New-Item -ItemType Directory -Path $OutputDirectory -Force
@@ -16,6 +16,12 @@ for ($i = 0; $i -lt $rows.Count; $i++) {
     try {
         $graphics.Clear([System.Drawing.Color]::White)
         $lines = @('SYNTHETIC TEST DATA - NOT A REAL ACCOUNT', 'Execution detail (FILLED)', 'Symbol: AAPL    Market: US    Currency: USD', "Side: $($row[0])", "Execution time: $($row[1])", "Execution price: $($row[2]) USD", "Executed quantity: $($row[3]) shares", "Test execution number: $($i + 1)")
+        if ($DateOnly) {
+            $amount = [decimal]$row[2] * [decimal]$row[3]
+            $lines[4] = "Execution date: $($row[1].Substring(0, 10))"
+            $lines[5] = "Gross execution amount (before fees): $amount USD"
+            $lines[7] = 'Fee: 1.00 USD    Tax: 0.00 USD'
+        }
         for ($line = 0; $line -lt $lines.Count; $line++) {
             $graphics.DrawString($lines[$line], $font, [System.Drawing.Brushes]::Black, 25, (25 + $line * 65))
         }

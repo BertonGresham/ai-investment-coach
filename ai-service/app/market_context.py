@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MarketContextRequest(StrictModel):
     symbol: str = Field(min_length=1, max_length=12, pattern=r"^[A-Za-z][A-Za-z0-9.-]{0,11}$")
     market: Literal["US"] = "US"
-    as_of: AwareDatetime
+    as_of: AwareDatetime | date
     language: Literal["zh-CN", "ko-KR"] = "zh-CN"
     source: Literal["yahoo", "demo"] = "yahoo"
     focus: Literal["general", "fear_of_missing_out"] = "general"
@@ -35,8 +35,10 @@ class MarketContextRequest(StrictModel):
 
     @field_validator("as_of")
     @classmethod
-    def validate_as_of(cls, value: datetime) -> datetime:
-        if value.date() < date(1970, 1, 1) or value > datetime.now(timezone.utc):
+    def validate_as_of(cls, value: datetime | date) -> datetime | date:
+        day = value.date() if isinstance(value, datetime) else value
+        future = value > datetime.now(timezone.utc) if isinstance(value, datetime) else value > datetime.now(NEW_YORK).date()
+        if day < date(1970, 1, 1) or future:
             raise ValueError("as_of must be between 1970 and the current time, with a timezone offset.")
         return value
 
@@ -176,7 +178,7 @@ def select_book_notes(language: str, focus: str) -> list[BookNote]:
 
 def build_market_context(req: MarketContextRequest, bars: list[DailyBar]) -> MarketContextResponse:
     ko = req.language == "ko-KR"
-    cutoff = req.as_of.astimezone(NEW_YORK).date()
+    cutoff = req.as_of.astimezone(NEW_YORK).date() if isinstance(req.as_of, datetime) else req.as_of
     usable = sorted((bar for bar in bars if cutoff - timedelta(days=180) <= bar.date < cutoff), key=lambda bar: bar.date)
     if not usable:
         raise MarketDataError("no_data", 404)
@@ -246,7 +248,7 @@ ERRORS = {
 
 @router.post("/analyze-market-context", response_model=MarketContextResponse)
 def analyze_market_context(req: MarketContextRequest) -> MarketContextResponse:
-    cutoff = req.as_of.astimezone(NEW_YORK).date()
+    cutoff = req.as_of.astimezone(NEW_YORK).date() if isinstance(req.as_of, datetime) else req.as_of
     try:
         bars = demo_bars(cutoff) if req.source == "demo" else fetch_yahoo_bars(req.symbol, cutoff)
         return build_market_context(req, bars)

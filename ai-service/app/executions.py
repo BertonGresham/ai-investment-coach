@@ -1,15 +1,16 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, localcontext
+from app.trade_times import order_executions, time_precision
 
 
-def summarize_executions(executions: list[dict]) -> dict:
+def summarize_executions(executions: list[dict], order_confirmed: bool = False) -> dict:
     """Long-only, moving weighted-average cost; excludes fees, taxes and FX."""
     with localcontext(prec=50):
-        return _summarize(executions)
+        return _summarize(executions, order_confirmed)
 
 
-def _summarize(executions: list[dict]) -> dict:
-    ordered = sorted(executions, key=lambda row: datetime.fromisoformat(row["time"].replace("Z", "+00:00")))
+def _summarize(executions: list[dict], order_confirmed: bool) -> dict:
+    ordered, ordering_basis = order_executions(executions, order_confirmed)
     bought = sold = held = 0
     buy_count = sell_count = 0
     buy_amount = sell_amount = cost = realized = sold_cost = Decimal(0)
@@ -20,7 +21,7 @@ def _summarize(executions: list[dict]) -> dict:
         return float(value.quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP))
 
     for row in ordered:
-        instant = datetime.fromisoformat(row["time"].replace("Z", "+00:00"))
+        instant = datetime.fromisoformat(row["time"].replace("Z", "+00:00")) if time_precision(row["time"]) == "instant" else row["time"]
         fingerprint = (instant, row["side"], row["price"], row["quantity"])
         if row["execution_id"] in seen_ids or fingerprint in seen_rows:
             raise ValueError("Duplicate or indistinguishable executions; verify the source records.")
@@ -57,6 +58,7 @@ def _summarize(executions: list[dict]) -> dict:
         raise ValueError("Total purchased quantity must be between 1 and 100000000.")
     return {
         "accounting_method": "moving_weighted_average_excluding_fees_taxes_fx",
+        "ordering_basis": ordering_basis,
         "buy_count": buy_count, "sell_count": sell_count,
         "total_bought": bought, "total_sold": sold, "remaining_quantity": held,
         "average_buy_price": number(buy_amount / bought),

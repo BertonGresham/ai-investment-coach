@@ -117,7 +117,7 @@ function createMarketContext({ getLanguage, getApiBase }) {
     const asOf = new Date(el("buyTime").value);
     if (!Number.isFinite(asOf.getTime()) || !el("symbol").value.trim()) throw new Error(text().invalid);
     const request = {
-      symbol: el("symbol").value.trim(), market: "US", as_of: asOf.toISOString(),
+      symbol: el("symbol").value.trim(), market: "US", as_of: el("buyTime").type === "date" || (el("buyTime").dataset?.recordedTime && !/(?:Z|[+-]\d{2}:\d{2})$/.test(el("buyTime").dataset.recordedTime)) ? el("buyTime").value.slice(0, 10) : asOf.toISOString(),
       language: getLanguage(), source: el("marketSource").value,
       focus: el("buyReasonType").value === "fear_of_missing_out" ? "fear_of_missing_out" : "general",
     };

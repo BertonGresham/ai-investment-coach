@@ -270,6 +270,7 @@
               </section>
             </div>
             <div id="activeLedger" class="execution-ledger" hidden>
+              <label id="activeOrderLabel"><input id="activeOrderConfirmed" type="checkbox" /><span id="activeOrderText"></span></label>
               <div id="activeExecutionEditor"></div><p id="activeExecutionError" class="inline-error" role="alert" hidden></p><div id="activeExecutionReport"></div>
               <button id="clearExecutions" type="button" class="button"></button>
             </div>
@@ -283,7 +284,7 @@
               <div class="field"><label for="sellPrice">卖出价格</label><input id="sellPrice" name="sellPrice" type="number" min="0.0001" step="any" value="213.2" /></div>
               <div class="field"><label for="buyReasonType">买入理由类型</label><select id="buyReasonType" name="buyReasonType"><option value="fear_of_missing_out">害怕错过 / 追涨</option><option value="plan">按计划执行</option><option value="technical_signal">技术信号</option><option value="news">消息影响</option><option value="other">其他</option></select></div>
               <div class="field"><label for="sellReason">卖出理由</label><input id="sellReason" name="sellReason" value="下跌后害怕继续亏损，所以卖出" maxlength="1000" /></div>
-              <div class="field wide"><label for="buyReason">买入理由</label><textarea id="buyReason" name="buyReason" required maxlength="1000">看到价格快速上涨，担心错过机会，所以买入</textarea></div>
+              <div class="field wide"><label for="buyReason">买入理由（选填）</label><textarea id="buyReason" name="buyReason" maxlength="1000">看到价格快速上涨，担心错过机会，所以买入</textarea></div>
               <div class="field wide"><span id="timeZoneHint" class="field-hint"></span></div>
               <div class="wide market-tools">
                 <div class="market-switch"><input id="autoMarket" type="checkbox" checked /><label id="autoMarketLabel" for="autoMarket">自动获取买入前日 K</label></div>
@@ -317,9 +318,9 @@
       <div class="privacy-line">仅作投资行为教育与复盘，不构成投资建议；单笔记录不能代表稳定人格。</div>
     </main>
 
-    <script src="market-context.js"></script>
-    <script src="execution-ledger.js?v=4"></script>
-    <script src="screenshot-review.js?v=4"></script>
+    <script src="market-context.js?v=5"></script>
+    <script src="execution-ledger.js?v=5"></script>
+    <script src="screenshot-review.js?v=5"></script>
     <script>
       const byId = (id) => document.getElementById(id);
       const translations = {
@@ -361,6 +362,7 @@
       let reviewMarket = null;
       let screenshotReview = null;
       let activeExecutions = null;
+      let executionOrderConfirmed = false;
 
       function applyLanguage() {
         const copy = translations[language];
@@ -451,6 +453,8 @@
       function loadSample() {
         screenshotReview?.clear();
         activeExecutions = null;
+        executionOrderConfirmed = false;
+        ["buyTime", "sellTime"].forEach((id) => setRecordedTimeInput(byId(id), null));
         renderActiveExecutions();
         const now = new Date();
         byId("market").value = "US";
@@ -498,8 +502,9 @@
       });
       checkService();
 
-      function applyRecognizedFields({ fields, executions }) {
+      function applyRecognizedFields({ fields, executions, execution_order_confirmed = false }) {
         activeExecutions = executions ? executions.map((row) => ({ ...row })) : null;
+        executionOrderConfirmed = execution_order_confirmed;
         demoSampleActive = false;
         byId("formError").hidden = true;
         const inputs = ["symbol", "buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"];
@@ -510,8 +515,8 @@
         byId("buyReasonType").value = "other";
         byId("symbol").value = fields.symbol || "";
         byId("market").value = fields.market || "OTHER";
-        byId("buyTime").value = screenshotLocalTime(fields.buy_time);
-        byId("sellTime").value = screenshotLocalTime(fields.sell_time);
+        setRecordedTimeInput(byId("buyTime"), fields.buy_time);
+        setRecordedTimeInput(byId("sellTime"), fields.sell_time);
         if (fields.buy_price != null) byId("buyPrice").value = fields.buy_price;
         if (fields.sell_price != null) byId("sellPrice").value = fields.sell_price;
         if (fields.quantity != null) byId("quantity").value = fields.quantity;
@@ -526,11 +531,12 @@
         let summary = null;
         if (activeExecutions) {
           try {
-            summary = summarizeExecutions(activeExecutions, language);
+            summary = summarizeExecutions(activeExecutions, language, executionOrderConfirmed);
             const fields = executionTradeFields(summary);
             const previousBuyTime = byId("buyTime").value;
             for (const [id, key] of Object.entries({ buyTime: "buy_time", sellTime: "sell_time", buyPrice: "buy_price", sellPrice: "sell_price", quantity: "quantity" })) {
-              byId(id).value = key.endsWith("time") ? screenshotLocalTime(fields[key]) : fields[key] ?? "";
+              if (key.endsWith("time")) setRecordedTimeInput(byId(id), fields[key]);
+              else byId(id).value = fields[key] ?? "";
             }
             if (previousBuyTime !== byId("buyTime").value) reviewMarket?.invalidate();
           } catch (problem) { error.textContent = problem.message; error.hidden = false; }
@@ -540,13 +546,19 @@
       }
       function renderActiveExecutions() {
         byId("activeLedger").hidden = !activeExecutions;
+        byId("activeOrderLabel").hidden = !activeExecutions?.some((row) => recordedTimePrecision(row.time) !== "instant");
+        byId("activeOrderText").textContent = executionTexts(language).orderConfirm;
+        byId("activeOrderConfirmed").checked = executionOrderConfirmed;
+        for (const id of ["buyReason", "sellReason"]) document.querySelector(`label[for="${id}"]`).textContent = translations[language].labels[id] + (language === "ko-KR" ? " (선택)" : "（选填）");
         byId("clearExecutions").textContent = executionTexts(language).clear;
         for (const id of ["buyTime", "sellTime", "buyPrice", "sellPrice", "quantity"]) {
           byId(id).readOnly = Boolean(activeExecutions);
           document.querySelector(`label[for="${id}"]`).textContent = (activeExecutions ? executionTexts(language).labels : translations[language].labels)[id];
         }
         if (activeExecutions) {
-          renderExecutionEditor(byId("activeExecutionEditor"), activeExecutions, language, syncExecutionSummary, "active");
+          renderExecutionEditor(byId("activeExecutionEditor"), activeExecutions, language, () => {
+            executionOrderConfirmed = false; byId("activeOrderConfirmed").checked = false; syncExecutionSummary();
+          }, "active");
           syncExecutionSummary();
         } else {
           byId("activeExecutionEditor").replaceChildren();
@@ -555,15 +567,20 @@
       }
       byId("clearExecutions").addEventListener("click", () => {
         activeExecutions = null;
+        executionOrderConfirmed = false;
+        ["buyTime", "sellTime"].forEach((id) => setRecordedTimeInput(byId(id), null));
         screenshotReview.clear();
         for (const id of ["buyTime", "sellTime", "buyPrice", "sellPrice", "quantity", "buyReason", "sellReason"]) byId(id).value = "";
         renderActiveExecutions(); reviewMarket.invalidate(); updatePnl();
+      });
+      byId("activeOrderConfirmed").addEventListener("change", () => {
+        executionOrderConfirmed = byId("activeOrderConfirmed").checked; syncExecutionSummary();
       });
 
       function updatePnl() {
         if (activeExecutions) {
           try {
-            const summary = summarizeExecutions(activeExecutions, language);
+            const summary = summarizeExecutions(activeExecutions, language, executionOrderConfirmed);
             byId("pnlPreview").textContent = summary.realized_profit_loss === null ? "" : `${executionTexts(language).pnl} ${summary.realized_profit_loss.toFixed(2)}`;
           } catch { byId("pnlPreview").textContent = ""; }
           return;
@@ -603,7 +620,7 @@
         const korean = language === "ko-KR";
         const problems = [];
         const tags = [];
-        const buy = data.decision.buy_reason;
+        const buy = data.decision.buy_reason || "";
         const sell = data.decision.sell_reason || "";
         if (["担心错过", "害怕错过", "怕错过", "追涨", "追高", "怕买不到", "놓칠까", "FOMO", "추격 매수", "추격매수"].some((word) => buy.includes(word))) {
           problems.push(problem("FOMO_BUYING", korean ? "기회를 놓칠까 하는 불안이 매수에 영향을 주었을 가능성" : "买入理由可能受到害怕错过的情绪影响", "medium", korean ? "매수 이유에 기회를 놓칠까 걱정했다는 내용이 있습니다." : "买入理由中提到担心错过或追涨。", korean ? "감정이 진입 결정에 관여했을 수 있습니다. 한 건만으로 반복 패턴이라고 단정할 수 없습니다." : "情绪可能参与了入场决策；仅凭一笔记录，无法确认是否形成稳定模式。", korean ? null : "识别害怕错过（AI Investment Coach 团队原创知识卡）"));
@@ -620,12 +637,15 @@
           problems.push(problem("INSUFFICIENT_SIGNAL", korean ? "현재 기록에서 명확한 행동 문제는 확인되지 않았습니다" : "当前记录未显示明确的行为问题", "low", korean ? "특정 행동을 판단할 만한 단서가 충분하지 않습니다." : "当前理由没有足以支持特定行为判断的线索。", korean ? "사전 계획과 거래 기록을 더 남겨 반복 패턴이 있는지 살펴보세요." : "建议保留事前计划和更多交易记录，再观察是否存在重复模式。", korean ? null : "小样本不等于稳定性格（AI Investment Coach 团队原创知识卡）"));
           tags.push({ tag_code: "NEEDS_MORE_DATA", tag_name: korean ? "더 많은 표본 필요" : "需要更多样本", confidence: 0.45 });
         }
+        if (![buy, sell, ...(data.trade.executions || []).map((row) => row.reason || "")].some((value) => value.trim())) {
+          problems.length = 0; tags.length = 0;
+        }
         const notable = problems.filter((item) => item.severity !== "low");
         return {
           trade_id: data.trade_id,
           trade_time: data.trade.buy_time,
           analysis_type: "single_trade_behavior_analysis",
-          execution_summary: data.trade.executions ? summarizeExecutions(data.trade.executions, language) : null,
+          execution_summary: data.trade.executions ? summarizeExecutions(data.trade.executions, language, data.trade.execution_order_confirmed) : null,
           behavior_summary: notable.length ? (korean ? `이번 기록에서 다음 가능성이 관찰됩니다: ${notable.map((item) => item.problem_name).join("; ")}.` : `本次记录可能体现出：${notable.map((item) => item.problem_name).join("；")}。`) : (korean ? "이번 기록만으로는 정보가 제한적이며 명확한 행동 문제는 확인되지 않았습니다." : "本次记录的信息有限，暂未发现明确的行为问题。"),
           detected_behavior_problems: problems,
           personality_tags: tags,
@@ -638,21 +658,21 @@
 
       function buildRequest() {
         const copy = translations[language];
-        const executionSummary = activeExecutions ? summarizeExecutions(activeExecutions, language) : null;
-        const buyTime = new Date(byId("buyTime").value);
-        const sellTimeValue = byId("sellTime").value;
+        const executionSummary = activeExecutions ? summarizeExecutions(activeExecutions, language, executionOrderConfirmed) : null;
+        const buyTimeValue = readRecordedTimeInput(byId("buyTime"));
+        const buyTime = new Date(buyTimeValue || "");
+        const sellTimeValue = readRecordedTimeInput(byId("sellTime"));
         const sellPriceValue = byId("sellPrice").value;
         const sellTime = sellTimeValue ? new Date(sellTimeValue) : null;
         const buyPrice = Number(byId("buyPrice").value);
         const sellPrice = sellPriceValue ? Number(sellPriceValue) : null;
         const quantity = Number(byId("quantity").value);
         const buyReason = byId("buyReason").value.trim();
-        const error = !buyReason ? copy.formMissingReason
-          : !Number.isFinite(buyTime.getTime()) ? copy.formBuyTime
+        const error = !Number.isFinite(buyTime.getTime()) ? copy.formBuyTime
           : !Number.isFinite(buyPrice) || buyPrice <= 0 ? copy.formBuyPrice
           : !Number.isInteger(quantity) || quantity <= 0 ? copy.formQuantity
           : (Boolean(sellTime) !== (sellPrice !== null)) ? copy.formSellPair
-          : sellTime && (!Number.isFinite(sellTime.getTime()) || sellTime < buyTime) ? copy.formSellTime
+          : sellTime && (!Number.isFinite(sellTime.getTime()) || (recordedTimePrecision(buyTimeValue) === recordedTimePrecision(sellTimeValue) ? sellTime < buyTime : sellTimeValue.slice(0, 10) < buyTimeValue.slice(0, 10))) ? copy.formSellTime
           : sellPrice !== null && (!Number.isFinite(sellPrice) || sellPrice <= 0) ? copy.formSellPrice
           : null;
         if (error) throw new Error(error);
@@ -663,17 +683,17 @@
           trade_id: `web-${Date.now()}`,
           stock: { symbol: byId("symbol").value.trim() || "UNKNOWN", market: byId("market").value },
           trade: {
-            buy_time: buyTime.toISOString(),
-            sell_time: sellTime ? sellTime.toISOString() : null,
+            buy_time: buyTimeValue,
+            sell_time: sellTimeValue,
             buy_price: buyPrice,
             sell_price: sellPrice,
             quantity,
             profit_loss_amount: profitLoss,
             profit_loss_rate: sellPrice === null ? null : Number(((sellPrice - buyPrice) / buyPrice).toFixed(6)),
-            ...(executionSummary ? { ...executionTradeFields(executionSummary), executions: executionPayload(activeExecutions) } : {}),
+            ...(executionSummary ? { ...executionTradeFields(executionSummary), executions: executionPayload(activeExecutions), execution_order_confirmed: executionOrderConfirmed } : {}),
           },
           decision: {
-            buy_reason: `${reasonType}：${buyReason}`,
+            buy_reason: buyReason ? `${reasonType}：${buyReason}` : null,
             sell_reason: byId("sellReason").value.trim() || null,
             planned_holding_period: null,
           },
@@ -720,7 +740,7 @@
         const top = document.createElement("div"); top.className = "result-top";
           const title = document.createElement("div");
         appendText(title, "h2", "", tr("resultTitle"));
-        appendText(title, "div", "result-date", new Date(result.trade_time).toLocaleString(language));
+        appendText(title, "div", "result-date", formatRecordedTime(result.trade_time, language));
         if (currentAnalysisLanguage !== language) appendText(title, "div", "result-date", tr("resultLanguageMismatch"));
         top.append(title);
         const badge = mode === "local" ? (language === "ko-KR" ? "로컬 규칙 시뮬레이션" : "本地规则模拟") : serviceAnalysisMode === "mock" ? (language === "ko-KR" ? "백엔드 Mock 모드" : "后端 Mock 模式") : (language === "ko-KR" ? "LLM 분석" : "LLM 服务分析");

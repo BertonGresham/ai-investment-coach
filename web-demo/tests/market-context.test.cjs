@@ -40,6 +40,14 @@ function response() {
   }) };
 }
 
+test('date-only market cutoff is sent as a date, not an invented midnight instant', async () => {
+  let payload;
+  const {ui, get} = fixture(async (_, options) => { payload = JSON.parse(options.body); return response(); });
+  get('buyTime').type = 'date'; get('buyTime').value = '2025-07-25';
+  await ui.ensure();
+  assert.equal(payload.as_of, '2025-07-25');
+});
+
 test('cached context is reused and changed symbols clear summary and references', async () => {
   let count = 0;
   const { ui, get } = fixture(async () => { count++; return response(); });

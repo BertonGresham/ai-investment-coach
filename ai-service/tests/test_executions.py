@@ -59,12 +59,52 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(Trade(executions=rows).profit_loss_amount, 10)
 
     def test_duplicate_and_incomplete_records_fail(self):
-        for override in [{"time": "2026-09-11"}, {"time": "2026-09-11T10:00:00"}, {"quantity": 0}, {"quantity": 1.5}, {"quantity": "10"}, {"price": float("inf")}, {"price": 0}]:
+        for override in [{"time": "2026-02-30"}, {"time": "not-a-date"}, {"quantity": 0}, {"quantity": 1.5}, {"quantity": "10"}, {"price": float("inf")}, {"price": 0}]:
             with self.subTest(override=override), self.assertRaises(ValidationError):
                 Trade(executions=[{**leg(1, "buy", 100, 10), **override}])
         for rows in [[], [leg(1, "buy", 100, 1)] * 2, [leg(1, "buy", 100, 1), leg(1, "buy", 100, 1, execution_id="other")], interleaved() * 26]:
             with self.subTest(rows=rows), self.assertRaises(ValidationError):
                 Trade(executions=rows)
+
+    def test_date_only_and_local_times_keep_their_precision(self):
+        rows = [leg(2, "sell", 110, 1, time="2026-09-12"), leg(1, "buy", 100, 1, time="2026-09-11")]
+        trade = Trade(executions=rows)
+        self.assertEqual(trade.buy_time, "2026-09-11")
+        self.assertEqual(trade.execution_summary.ordering_basis, "recorded_date_or_local_time")
+        self.assertEqual(trade.profit_loss_amount, 10)
+        local = Trade(executions=[leg(1, "buy", 100, 1, time="2026-09-11T10:00:00")])
+        self.assertEqual(local.buy_time, "2026-09-11T10:00:00")
+
+    def test_ambiguous_order_requires_confirmation_not_invented_time(self):
+        rows = [leg(1, "buy", 100, 2, time="2026-09-11"), leg(2, "sell", 110, 1, time="2026-09-11")]
+        with self.assertRaises(ValidationError):
+            Trade(executions=rows)
+        trade = Trade(executions=rows, execution_order_confirmed=True)
+        self.assertEqual(trade.profit_loss_amount, 10)
+        self.assertEqual(trade.execution_summary.ordering_basis, "recorded_date_and_confirmed_sequence")
+        with self.assertRaises(ValidationError):
+            Trade(executions=list(reversed(rows)), execution_order_confirmed=True)
+
+    def test_missing_reason_does_not_block_date_only_analysis(self):
+        data = request([leg(1, "buy", 100, 1, time="2026-09-11")])
+        data["decision"] = {}
+        with patch.dict(os.environ, {"USE_MOCK_LLM": "true"}), TestClient(app) as client:
+            response = client.post("/analyze-trade", json=data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["trade_time"], "2026-09-11")
+        self.assertEqual(response.json()["detected_behavior_problems"], [])
+        self.assertEqual(response.json()["personality_tags"], [])
+
+    def test_no_reason_does_not_become_a_personality_inference(self):
+        data = request(interleaved())
+        result = mock_behavior_analysis(TradeAnalysisRequest.model_validate(data)).model_dump()
+        result["personality_tags"] = [{"tag_code": "UNSUPPORTED", "tag_name": "Inferred from missing reasons", "confidence": 0.9}]
+        data["decision"] = {}
+        with patch.dict(os.environ, {"USE_MOCK_LLM": "false", "LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-only"}), patch("app.main.retrieve_theory", return_value=[]), patch("app.main.claude_json", return_value=result), TestClient(app) as client:
+            response = client.post("/analyze-trade", json=data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["personality_tags"], [])
+        self.assertEqual(response.json()["detected_behavior_problems"], [])
 
     def test_sales_must_be_covered_at_that_instant_not_by_future_buys(self):
         for rows in [[leg(1, "sell", 100, 1)], [leg(1, "buy", 100, 1), leg(2, "sell", 120, 2), leg(3, "buy", 100, 1)]]:

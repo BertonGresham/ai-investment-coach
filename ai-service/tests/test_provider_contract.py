@@ -26,6 +26,23 @@ class ScreenshotClassificationMixin:
     def classified_response(self, data):
         return self.provider(data if os.environ["LLM_PROVIDER"] == "anthropic" else json.dumps(data))
 
+    def test_date_only_and_derived_fields_survive_provider_contract(self):
+        self.classified_response({
+            "record": {"kind": "security_trade", "side": "buy"},
+            "fields": {"symbol": "AAPL", "buy_time": "2026-09-11", "quantity": 10},
+            "details": {"gross_amount": 1000, "fee": 1, "tax": 0, "currency": "USD"},
+            "field_confidence": {"quantity": 0.9},
+        })
+        response = self.upload()
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["fields"]["buy_time"], "2026-09-11")
+        self.assertEqual(data["fields"]["buy_price"], 100)
+        self.assertEqual(data["derived_fields"], ["buy_price"])
+        self.assertNotIn("buy_price", data["field_confidence"])
+        self.assertEqual(data["details"]["fee"], 1)
+        self.assertIsNone(data["fields"]["buy_reason"])
+
     def test_cash_flow_zero_placeholders_never_become_a_trade(self):
         for language in ("zh-CN", "ko-KR"):
             with self.subTest(language=language):

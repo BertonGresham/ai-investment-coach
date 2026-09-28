@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.executions import summarize_executions
+from app.trade_times import time_precision
 
 
 class StrictModel(BaseModel):
@@ -28,10 +29,8 @@ class Execution(StrictModel):
 
     @field_validator("time")
     @classmethod
-    def require_exact_time(cls, value: str) -> str:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if "T" not in value or parsed.tzinfo is None or parsed.utcoffset() is None:
-            raise ValueError("Each execution requires an exact time with timezone; date-only values are not sufficient.")
+    def preserve_time_precision(cls, value: str) -> str:
+        time_precision(value)
         return value
 
 
@@ -42,6 +41,7 @@ class ExecutionStep(Execution):
 
 
 class ExecutionSummary(StrictModel):
+    ordering_basis: Literal["timestamp", "recorded_date_or_local_time", "recorded_date_and_confirmed_sequence"] = "timestamp"
     accounting_method: Literal["moving_weighted_average_excluding_fees_taxes_fx"]
     buy_count: int
     sell_count: int
@@ -58,6 +58,7 @@ class ExecutionSummary(StrictModel):
 
 
 class Trade(StrictModel):
+    execution_order_confirmed: bool = False
     executions: list[Execution] | None = Field(default=None, min_length=1, max_length=100)
     buy_time: str = Field(min_length=1, max_length=40)
     sell_time: str | None = Field(default=None, max_length=40)
@@ -76,7 +77,7 @@ class Trade(StrictModel):
         if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
             raise ValueError("executions must contain between 1 and 100 records.")
         parsed = [Execution.model_validate(row).model_dump() for row in entries]
-        summary = summarize_executions(parsed)
+        summary = summarize_executions(parsed, value.get("execution_order_confirmed") is True)
         buys = [row for row in summary["timeline"] if row["side"] == "buy"]
         sells = [row for row in summary["timeline"] if row["side"] == "sell"]
         return {**value, "executions": parsed,
@@ -90,7 +91,7 @@ class Trade(StrictModel):
     def execution_summary(self) -> ExecutionSummary | None:
         if not self.executions:
             return None
-        return ExecutionSummary.model_validate(summarize_executions([row.model_dump() for row in self.executions]))
+        return ExecutionSummary.model_validate(summarize_executions([row.model_dump() for row in self.executions], self.execution_order_confirmed))
 
     @field_validator("buy_time", "sell_time")
     @classmethod
@@ -112,13 +113,14 @@ class Trade(StrictModel):
         if self.sell_time is not None:
             buy_at = _parse_iso_time(self.buy_time)
             sell_at = _parse_iso_time(self.sell_time)
-            if sell_at < buy_at:
+            comparable = time_precision(self.buy_time) == time_precision(self.sell_time)
+            if (comparable and sell_at < buy_at) or (not comparable and self.sell_time[:10] < self.buy_time[:10]):
                 raise ValueError("sell_time must not be earlier than buy_time.")
         return self
 
 
 class Decision(StrictModel):
-    buy_reason: str = Field(min_length=1, max_length=1_000)
+    buy_reason: str | None = Field(default=None, max_length=1_000)
     sell_reason: str | None = Field(default=None, max_length=1_000)
     confidence_level: int | None = Field(default=None, ge=1, le=5)
     planned_holding_period: str | None = Field(default=None, max_length=80)
@@ -128,7 +130,7 @@ class Decision(StrictModel):
     @classmethod
     def require_nonblank_buy_reason(cls, value: str) -> str:
         if isinstance(value, str):
-            return value.strip()
+            return value.strip() or None
         return value
 
 
@@ -255,9 +257,9 @@ class ScreenshotTradeFields(StrictModel):
     market: Literal["US", "KR", "CN", "OTHER"] | None = None
     buy_time: str | None = Field(default=None, max_length=40)
     sell_time: str | None = Field(default=None, max_length=40)
-    buy_price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    sell_price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    quantity: int | None = Field(default=None, gt=0, le=100_000_000)
+    buy_price: float | None = Field(default=None, gt=0, allow_inf_nan=False, description="Only a visibly printed per-unit buy execution price. Null when only gross amount and quantity are shown. Never calculate this field.")
+    sell_price: float | None = Field(default=None, gt=0, allow_inf_nan=False, description="Only a visibly printed per-unit sell execution price. Null when only gross amount and quantity are shown. Never calculate this field.")
+    quantity: int | None = Field(default=None, gt=0, le=100_000_000, description="Only visibly printed executed share quantity; null if not shown. Never calculate this field.")
     buy_reason: str | None = Field(default=None, max_length=1_000)
     sell_reason: str | None = Field(default=None, max_length=1_000)
 
@@ -287,7 +289,17 @@ class ScreenshotRecord(StrictModel):
     side: Literal["buy", "sell", "round_trip", "unknown"] = "unknown"
 
 
+class ScreenshotDetails(StrictModel):
+    stock_name: str | None = Field(default=None, max_length=120)
+    currency: str | None = Field(default=None, max_length=12)
+    gross_amount: float | None = Field(default=None, gt=0, le=1e20, allow_inf_nan=False)
+    fee: float | None = Field(default=None, ge=0, le=1e20, allow_inf_nan=False)
+    tax: float | None = Field(default=None, ge=0, le=1e20, allow_inf_nan=False)
+
+
 class ScreenshotRecognitionResponse(StrictModel):
+    details: ScreenshotDetails = Field(default_factory=ScreenshotDetails)
+    derived_fields: list[Literal["buy_price", "sell_price", "quantity"]] = Field(default_factory=list)
     status: Literal["recognized", "not_trade", "needs_review", "mock"]
     record: ScreenshotRecord = Field(default_factory=ScreenshotRecord)
     fields: ScreenshotTradeFields

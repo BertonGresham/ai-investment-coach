@@ -16,6 +16,7 @@ from openai import OpenAI
 from pydantic import ValidationError
 
 from app.claude import claude_json
+from app.screenshot_fields import complete_trade_fields
 from app.prompts import SYSTEM_PROMPT, build_analysis_payload, build_user_prompt
 from app.rag import retrieve_theory
 from app.market_context import router as market_context_router
@@ -28,6 +29,7 @@ from app.schemas import (
     ScreenshotRecognitionResponse,
     ScreenshotRecord,
     ScreenshotTradeFields,
+    ScreenshotDetails,
     TradeAnalysisRequest,
     TradeAnalysisResponse,
 )
@@ -200,9 +202,19 @@ def llm_screenshot_recognition(
         "Use round_trip only when the screenshot explicitly links a buy and sell for the same position; never pair separate rows yourself. "
         "Do not infer missing values, trading intent, or reasons from price movement or profit/loss. Only transcribe a reason if it is explicitly visible. "
         "If a field is ambiguous, leave it null. Normalize dates to ISO 8601 only when enough information is visible; never invent a year or time. "
-        "Use market only when clear: US, KR, CN, OTHER. All explanatory text must be "
+        "Inspect the entire selected transaction including its header and every table row before returning. "
+        "Korean labels: 거래일자=trade date, 종목명=stock name, 단가=unit execution price, 거래수량=executed quantity, "
+        "거래금액=gross execution amount only when clearly pre-fee, 수수료=fee, 제세금=tax. "
+        "Ignore the phone status-bar clock, order-submission time, balances and net 입출금액 when extracting execution facts. "
+        "Preserve YYYY-MM-DD when only a date is visible; preserve local timestamp without offset when the timezone is absent. "
+        "Never discard a readable date just because the clock time is absent. Prefer the visible stock code; "
+        "if no code is shown preserve the visible stock name as symbol and in details.stock_name, never guess a ticker. "
+        "In details, extract stock_name, explicitly visible currency, gross_amount, fee and tax. Use null for unknowns, "
+        "including gross_amount if it may be net of fees/tax or may combine multiple executions. Do not calculate missing fields yourself; "
+        "the server can derive price/quantity from a clearly labeled gross amount. Do not extract account numbers or personal identifiers. "
+        "Use market only when clear from the security/exchange, not just the UI language: US, KR, CN, OTHER. All explanatory text must be "
         + ("Korean. " if korean else "Simplified Chinese. ")
-        + "Return only a JSON object with keys record, fields, field_confidence (0 to 1 per extracted field), and warnings. "
+        + "Return only a JSON object with keys record, fields, details, field_confidence (0 to 1 per extracted field), and warnings. "
         "fields must contain symbol, market, buy_time, sell_time, buy_price, sell_price, quantity, buy_reason, sell_reason; use null when not readable."
     )
     image_data = base64.b64encode(data).decode("ascii")
@@ -213,8 +225,11 @@ def llm_screenshot_recognition(
             for name in ("status", "notice"):
                 schema["properties"].pop(name)
                 schema["required"].remove(name)
-            schema["required"].append("record")
+            schema["properties"].pop("derived_fields")
+            schema["required"] = ["record", "fields", "details", "field_confidence", "warnings"]
             schema["$defs"]["ScreenshotRecord"]["required"] = ["kind", "label", "side"]
+            for definition in ("ScreenshotTradeFields", "ScreenshotDetails"):
+                schema["$defs"][definition]["required"] = list(schema["$defs"][definition]["properties"])
             schema["properties"]["field_confidence"] = {
                 "type": "object",
                 "properties": {name: {"type": "number", "minimum": 0, "maximum": 1} for name in ScreenshotTradeFields.model_fields},
@@ -246,7 +261,7 @@ def llm_screenshot_recognition(
                     ],
                     response_format={"type": "json_object"},
                     temperature=0,
-                    max_tokens=900,
+                    max_tokens=1600,
                 )
             if response.choices[0].finish_reason != "stop":
                 raise ValueError("The vision model response was not completed.")
@@ -296,6 +311,10 @@ def llm_screenshot_recognition(
                     raw_fields[key] = None
                     invalid_dates.append(key)
         fields = ScreenshotTradeFields.model_validate(raw_fields)
+        details = ScreenshotDetails.model_validate(raw.get("details") or {})
+        derived_fields = complete_trade_fields(fields, details, record.side)
+        for key in derived_fields:
+            confidence.pop(key, None)
         if invalid_dates:
             warnings.append(
                 "날짜 형식을 명확히 읽을 수 없어 해당 날짜를 입력하지 않았습니다. 직접 확인해 주세요."
@@ -309,6 +328,8 @@ def llm_screenshot_recognition(
             status="recognized" if has_fields else "needs_review",
             record=record,
             fields=fields,
+            details=details,
+            derived_fields=derived_fields,
             field_confidence=confidence,
             warnings=warnings[:20],
             notice=(
@@ -397,6 +418,9 @@ def llm_behavior_analysis(
         raw_result["trade_time"] = req.trade.buy_time
         raw_result["analysis_type"] = "single_trade_behavior_analysis"
         raw_result["execution_summary"] = req.trade.execution_summary
+        if not _has_recorded_reasons(req):
+            raw_result["detected_behavior_problems"] = []
+            raw_result["personality_tags"] = []
         _keep_supported_theory_references(raw_result, [*req.rag_context, *retrieved])
         result = TradeAnalysisResponse.model_validate(raw_result)
         if not all((result.behavior_summary, result.risk_notice, result.uncertainty.reason)) or not any(line.strip() for line in result.coaching_advice) or not any(line.strip() for line in result.reflection_questions):
@@ -422,9 +446,14 @@ def llm_behavior_analysis(
         ) from exc
 
 
+def _has_recorded_reasons(req: TradeAnalysisRequest) -> bool:
+    return any(value and value.strip() for value in [req.decision.buy_reason, req.decision.sell_reason,
+               *(row.reason for row in (req.trade.executions or []))])
+
+
 def mock_behavior_analysis(req: TradeAnalysisRequest) -> TradeAnalysisResponse:
     korean = req.analysis_context.language == "ko-KR"
-    buy_reason = req.decision.buy_reason
+    buy_reason = req.decision.buy_reason or ""
     sell_reason = req.decision.sell_reason or ""
     decisions = buy_reason + " " + sell_reason
     supplied_notes = req.rag_context
@@ -521,8 +550,8 @@ def mock_behavior_analysis(req: TradeAnalysisRequest) -> TradeAnalysisResponse:
         trade_time=req.trade.buy_time,
         analysis_type="single_trade_behavior_analysis",
         behavior_summary=summary,
-        detected_behavior_problems=problems,
-        personality_tags=tags,
+        detected_behavior_problems=problems if _has_recorded_reasons(req) else [],
+        personality_tags=tags if _has_recorded_reasons(req) else [],
         coaching_advice=[
             "다음 거래 전에 진입 이유, 청산 조건, 감당 가능한 최대 손실을 적어 두세요." if korean else "下次交易前写下入场理由、退出条件和可接受的最大损失。",
             "거래 후에는 손익만으로 판단하지 말고 사전 계획과 비교해 복기하세요." if korean else "交易结束后对照事前计划复盘，不要只用盈亏评价决策。",

@@ -15,6 +15,8 @@ function mergeScreenshotRecords(entries) {
   const sources = {};
   const confidence = {};
   const mergeWarnings = [];
+  const currencies = entries.map((entry) => entry.result.details?.currency?.trim().toUpperCase()).filter(Boolean);
+  if (new Set(currencies).size > 1) return { error: "mergeCurrency" };
   const present = (value) => value != null && String(value).trim() !== "";
   function copyField(key, entries, value) {
     fields[key] = value;
@@ -35,10 +37,14 @@ function mergeScreenshotRecords(entries) {
       time: entry.result.fields?.[`${side}_time`] ?? null, price: entry.result.fields?.[`${side}_price`] ?? null,
       quantity: entry.result.fields?.quantity ?? null, reason: entry.result.fields?.[`${side}_reason`] ?? null, source: entry.name }));
   });
+  if (executions.every((row) => recordedTimePrecision(row.time))) {
+    executions.splice(0, executions.length, ...orderedExecutionRows(executions, true, "zh-CN").rows);
+  }
   try { Object.assign(fields, executionTradeFields(summarizeExecutions(executions))); } catch { /* Reviewed and corrected per execution before confirmation. */ }
   return { result: {
     status: "recognized", record: { kind: "security_trade", side: "round_trip", label: null }, fields,
     executions,
+    source_details: entries.map((entry) => ({ name: entry.name, details: entry.result.details })),
     field_confidence: confidence, field_sources: sources, merge_warnings: mergeWarnings,
     warnings: entries.flatMap((entry) => [entry.result.notice, ...(entry.result.warnings || [])]
       .filter((message) => typeof message === "string" && message).map((message) => `${entry.name}: ${message}`)),
@@ -50,21 +56,23 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
   const copy = {
     "zh-CN": {
       recognize: "识别待处理图片", title: "待核对的识别结果", confirm: "确认并替换表单", cancel: "取消", remove: "移除当前图片",
+      derived: "由成交总额与已识别价格/数量计算", detailLabels: { stock_name: "股票名称", currency: "币种", gross_amount: "成交总额（税费前）", fee: "手续费（未计入盈亏）", tax: "税费（未计入盈亏）" },
       stop: "停止识别", clear: "清空图片", stopped: "已停止，已完成的结果仍保留。", limit: "最多选择 10 张图片，合计不超过 32 MB；原图片列表未改变。",
       queued: "请先识别当前图片，或移除图片后手动分析。", progress: (done, total) => `已处理 ${done} / ${total} 张`,
       states: { queued: "待识别", reading: "识别中", ready: "待核对", cashFlow: "资金流水", unclassified: "类型不明", error: "识别失败", applied: "已填入", cancelled: "已取消" },
       merge: "合并所选成交", mergeCount: (count) => `已勾选 ${count} 张`, include: "参与合并：", source: "来源：",
       sides: { buy: "买入", sell: "卖出", round_trip: "完整买卖" },
-      mergedTitle: "合并后的交易 · 待核对", confirmMerged: "确认合并并填入表单", mergedApplied: "已合并所选成交明细并填入表单，请补全交易理由。",
-      acknowledge: "我已核对每笔成交，确认属于同一账户、股票、市场和币种，且从首次买入起没有遗漏或重复。相同时刻的成交按列表顺序计算。",
+      mergedTitle: "合并后的交易 · 待核对", confirmMerged: "确认合并并填入表单", mergedApplied: "已合并并填入成交明细，可直接复盘。交易理由选填，未记录的理由不会推测。",
+      acknowledge: "我已核对每笔成交，确认属于同一账户、股票、市场和币种，从首次买入起没有遗漏或重复。同日时刻不明时，显示顺序符合实际先后。",
       mergeSides: "请选择至少两张股票成交记录；资金流水和类型不明的图片不能合并。",
       mergeSymbol: "股票代码不一致，不能合并。请核对所选图片是否属于同一股票。",
       mergeMarket: "市场不一致，不能合并。请核对所选图片是否属于同一市场。",
+      mergeCurrency: "识别到不同币种，不能直接合并计算。请核对原始记录。",
       mergeIdentity: "至少一张图缺少股票或市场，无法完整比对。确认前请核实所选原图的股票和账户。",
       columns: ["字段", "截图内容", "模型自评分"],
       fields: ["股票代码", "市场", "买入时间", "卖出时间", "买入价格", "卖出价格", "股数", "买入理由", "卖出理由"],
       missing: "未识别", review: "待核对", score: "自评分不是准确率。缺失字段不会沿用原表单内容。",
-      time: "时间缺少时刻或时区，暂不填入。请在表单中按本机时区补充真实时间。",
+      time: "已保留截图中的日期或当地时间；未显示的时刻、时区保持未知，不必补填。",
       pending: "请先确认或取消截图识别结果，再分析交易。", busy: "截图识别中，请等待或移除图片后再分析。",
       reading: "正在识别截图…", failed: "截图识别失败，请重试或手动输入。", timeout: "识别超时，请重试。",
       mock: "当前为 Mock 模式，没有执行真实截图识别；原表单未改变。",
@@ -73,27 +81,29 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
       unclassified: "暂时无法确认股票买卖成交及方向，原表单未改变。请换用明确的成交明细，或移除图片后手动填写。",
       originalType: "截图交易类型：", buyOnly: "这张图仅记录买入，卖出字段保持空白；未卖出时可保留为空。",
       sellOnly: "这张图仅记录卖出。分析前请补充对应买入记录，不要把其他买入自动配到这笔卖出。",
-      applied: "已填入确认的字段，请补全空白项和交易理由。", cancelled: "已取消识别结果，原表单未改变。",
+      applied: "已填入已识别字段。交易理由选填；只有缺少必要的成交日期、价格或数量时才需补充记录。", cancelled: "已取消识别结果，原表单未改变。",
       changed: "表单已修改，旧识别结果已取消。", large: "图片超过 8 MB。", invalid: "请选择 PNG、JPG 或 WebP 图片。",
       errors: { 413: "图片超过 8 MB。", 415: "图片格式无效，请使用 PNG、JPG 或 WebP。", 422: "上传参数无效。", 503: "真实 AI 尚未配置，请先在后端配置 API 密钥。" },
     },
     "ko-KR": {
       recognize: "미처리 이미지 인식", title: "확인할 인식 결과", confirm: "확인 후 입력란 교체", cancel: "취소", remove: "현재 이미지 제거",
+      derived: "체결 총액과 인식된 가격/수량으로 계산", detailLabels: { stock_name: "종목명", currency: "통화", gross_amount: "세전 체결 총액", fee: "수수료 (손익 미포함)", tax: "세금 (손익 미포함)" },
       stop: "인식 중지", clear: "이미지 비우기", stopped: "중지했습니다. 완료된 결과는 유지됩니다.", limit: "최대 10장, 합계 32MB까지 선택할 수 있습니다. 기존 이미지 목록은 유지됩니다.",
       queued: "현재 이미지를 인식하거나 제거한 뒤 직접 분석하세요.", progress: (done, total) => `${done} / ${total}장 처리됨`,
       states: { queued: "인식 대기", reading: "인식 중", ready: "확인 필요", cashFlow: "자금 내역", unclassified: "종류 불명", error: "인식 실패", applied: "입력 완료", cancelled: "취소됨" },
       merge: "선택한 체결 합치기", mergeCount: (count) => `${count}장 선택`, include: "합치기에 포함: ", source: "출처: ",
       sides: { buy: "매수", sell: "매도", round_trip: "매수·매도" },
-      mergedTitle: "합친 거래 · 확인 필요", confirmMerged: "합친 거래 확인 후 입력", mergedApplied: "선택한 체결 내역을 합쳐 입력했습니다. 매매 이유를 보완하세요.",
-      acknowledge: "각 체결이 같은 계좌·종목·시장·통화이며 최초 매수부터 누락이나 중복이 없음을 확인했습니다. 같은 시각의 체결은 목록 순서로 계산합니다.",
+      mergedTitle: "합친 거래 · 확인 필요", confirmMerged: "합친 거래 확인 후 입력", mergedApplied: "체결 내역을 입력했습니다. 이유는 선택 사항이며 미기록 이유는 추측하지 않습니다.",
+      acknowledge: "같은 계좌·종목·시장·통화이며 최초 매수부터 누락이나 중복이 없음을 확인했습니다. 같은 날 시각이 없을 때 표시 순서가 실제 순서와 일치합니다.",
       mergeSides: "주식 체결 이미지를 2장 이상 선택하세요. 자금 내역이나 종류가 불명확한 이미지는 합칠 수 없습니다.",
       mergeSymbol: "종목 코드가 달라 합칠 수 없습니다. 같은 종목인지 확인하세요.",
       mergeMarket: "시장이 달라 합칠 수 없습니다. 같은 시장인지 확인하세요.",
+      mergeCurrency: "통화가 달라 합산할 수 없습니다. 원본 기록을 확인하세요.",
       mergeIdentity: "종목이나 시장이 누락된 이미지가 있어 완전한 비교가 불가능합니다. 확인 전에 선택한 원본의 종목과 계좌를 확인하세요.",
       columns: ["항목", "스크린샷 내용", "모델 자체 점수"],
       fields: ["종목 코드", "시장", "매수 시간", "매도 시간", "매수 가격", "매도 가격", "수량", "매수 이유", "매도 이유"],
       missing: "미인식", review: "확인 필요", score: "자체 점수는 정확도가 아닙니다. 누락된 항목은 기존 입력값을 사용하지 않습니다.",
-      time: "시각 또는 시간대가 없어 시간을 입력하지 않았습니다. 기기의 시간대를 기준으로 실제 시간을 입력하세요.",
+      time: "스크린샷의 날짜 또는 현지 시각을 유지합니다. 없는 시각이나 시간대는 입력하지 않아도 됩니다.",
       pending: "인식 결과를 확인하거나 취소한 뒤 거래를 분석하세요.", busy: "인식 중입니다. 기다리거나 이미지를 제거한 뒤 분석하세요.",
       reading: "스크린샷을 인식하는 중…", failed: "인식에 실패했습니다. 다시 시도하거나 직접 입력하세요.", timeout: "인식 시간이 초과되었습니다. 다시 시도하세요.",
       mock: "Mock 모드에서는 실제 이미지 인식을 수행하지 않습니다. 기존 입력값은 그대로 유지됩니다.",
@@ -102,7 +112,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
       unclassified: "주식 체결 여부와 매매 방향을 확인할 수 없어 기존 입력값을 유지합니다. 명확한 체결 내역으로 바꾸거나 이미지를 제거한 뒤 직접 입력하세요.",
       originalType: "스크린샷 거래 종류: ", buyOnly: "매수만 기록된 이미지입니다. 매도 항목은 비워 둡니다. 아직 매도하지 않았다면 그대로 두세요.",
       sellOnly: "매도만 기록된 이미지입니다. 분석 전에 해당 매수 기록을 보완하세요. 다른 매수를 임의로 연결하지 마세요.",
-      applied: "확인한 항목을 입력했습니다. 빈 항목과 매매 이유를 보완하세요.", cancelled: "인식 결과를 취소했습니다. 기존 입력값은 유지됩니다.",
+      applied: "인식 항목을 입력했습니다. 이유는 선택 사항입니다. 필수 체결 날짜·가격·수량이 없을 때만 기록을 보완하세요.", cancelled: "인식 결과를 취소했습니다. 기존 입력값은 유지됩니다.",
       changed: "입력값이 변경되어 이전 인식 결과를 취소했습니다.", large: "이미지가 8MB를 초과합니다.", invalid: "PNG, JPG 또는 WebP 이미지를 선택하세요.",
       errors: { 413: "이미지가 8MB를 초과합니다.", 415: "올바른 PNG, JPG 또는 WebP 이미지를 선택하세요.", 422: "업로드 정보가 올바르지 않습니다.", 503: "실제 AI가 설정되지 않았습니다. 서버의 API 키를 설정하세요." },
     },
@@ -186,7 +196,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     if (!mergedDraft) return;
     let summary = null;
     try {
-      summary = summarizeExecutions(mergedDraft.result.executions, getLanguage());
+      summary = summarizeExecutions(mergedDraft.result.executions, getLanguage(), el("confirmSameTrade").checked);
       Object.assign(mergedDraft.result.fields, executionTradeFields(summary));
       mergedDraft.valid = true;
       el("mergeExecutionError").textContent = "";
@@ -230,7 +240,18 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
       const cell = add(row, "td", missing ? text().missing : String(value));
       if (draft.field_sources?.[key]) add(cell, "small", text().source + draft.field_sources[key].join(" / ")).className = "ocr-source";
       add(row, "td", missing || !scoreKnown ? text().review : `${Math.round(confidence * 100)}%${confidence < 0.8 ? ` · ${text().review}` : ""}`);
+      if (draft.derived_fields?.includes(key)) add(cell, "small", text().derived).className = "ocr-source";
     });
+    for (const [key, label] of Object.entries(text().detailLabels)) {
+      const value = draft.details?.[key];
+      if (value == null) continue;
+      const row = add(rows, "tr", "");
+      add(row, "th", label); add(row, "td", String(value)); add(row, "td", text().review);
+    }
+    for (const source of draft.source_details || []) {
+      const details = Object.entries(text().detailLabels).filter(([key]) => source.details?.[key] != null).map(([key, label]) => `${label}: ${source.details[key]}`);
+      if (details.length) add(warnings, "p", `${source.name}: ${details.join(" · ")}`);
+    }
     add(warnings, "p", text().score);
     for (const key of draft.merge_warnings || []) add(warnings, "p", text()[key]);
     if (["buy_time", "sell_time"].some((key) => draft.fields[key] && !screenshotLocalTime(draft.fields[key]))) add(warnings, "p", text().time);
@@ -369,7 +390,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     mergedDraft = merged.result ? { members, result: merged.result } : null;
     refresh();
   });
-  el("confirmSameTrade").addEventListener("change", controls);
+  el("confirmSameTrade").addEventListener("change", validateMerged);
   el("removeScreenshot").addEventListener("click", () => {
     if (!selected) return;
     stop();
@@ -393,6 +414,7 @@ function createScreenshotReview({ getLanguage, getApiBase, onApply }) {
     const result = draft;
     const members = mergedDraft?.members || [selected];
     const wasMerged = Boolean(mergedDraft);
+    if (wasMerged) result.execution_order_confirmed = el("confirmSameTrade").checked;
     // Only one record owns the form; previously applied records need confirmation again.
     for (const item of items) if (item.state === "applied") item.state = "ready";
     for (const item of members) item.state = "applied";

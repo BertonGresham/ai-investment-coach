@@ -28,7 +28,7 @@
 }
 ```
 
-- `as_of` 必须带时区，不能晚于当前时间。转为纽约日期后，严格排除当天和之后的日 K。
+- `as_of` 支持带时区的时间或 `YYYY-MM-DD` 日期，不能晚于当前时间/纽约当前日期。完整时间转为纽约日期；仅日期输入直接视为交易日期，不补造时刻。严格排除当天和之后的日 K。
 - `source` 为 `yahoo`（默认，真实历史数据）或 `demo`（明确标注的合成数据，无外网请求）。不受 `USE_MOCK_LLM` 控制；即使 Mock，选择 Yahoo 仍会读取真实行情。
 - `focus` 为 `general` 或 `fear_of_missing_out`；只决定参考笔记，不表示已经检测到行为问题。
 - 响应含 `source/provider/retrieved_at/exchange_timezone/cutoff_date_exclusive/data_start/data_end/bar_count/price_basis`、`metrics`、`kline_summary`、`book_notes`、`rag_context`、`warnings`。
@@ -211,7 +211,11 @@ Response 包含 short_term、medium_term、long_term 三个窗口的样本数、
 
 ### 分批成交输入与输出
 
-兼容原有 `trade` 单笔字段；提供 `trade.executions` 时，以成交明细为准，服务器重新推导并覆盖汇总字段，不信任客户端盈亏。示例见 `ai-service/examples/trade.executions.json`。每条包含 `execution_id`、`side`（buy/sell）、`time`（ISO 8601，完整时刻和时区）、`price`（1e-8 至 1e12）、`quantity`（正整数）、可空 `reason`。最多 100 条，累计买入不超过 1 亿股。明细按绝对时间排序，同一时刻保持输入顺序；必须自行核实同刻顺序。重复 ID、同时间/方向/价格/数量的不可区分记录、任何时刻卖出超过持仓均返回 422。暂不支持做空、期初持仓、手续费税费汇率或公司行动调整。
+兼容原有 `trade` 单笔字段；提供 `trade.executions` 时，以成交明细为准，服务器重新推导并覆盖汇总字段，不信任客户端盈亏。示例见 `ai-service/examples/trade.executions.json`。每条包含 `execution_id`、`side`（buy/sell）、`time`（ISO 8601，可为日期、未注明时区的当地时间或完整时间）、`price`（1e-8 至 1e12）、`quantity`（正整数）、可空 `reason`。最多 100 条，累计买入不超过 1 亿股。完整时间按绝对时刻排序；不完整时间保留原精度，按记录日期排列。同日缺时刻或混用已知/未知时区时，必须核对列表顺序并传 `trade.execution_order_confirmed: true`，否则返回 422；不能把自动排列当成识别到的盘中先后。重复 ID、同时间/方向/价格/数量的不可区分记录、任何时刻卖出超过持仓均返回 422。暂不支持做空、期初持仓、手续费税费汇率或公司行动调整。
+
+`execution_summary.ordering_basis` 标记顺序来源：`timestamp`、`recorded_date_or_local_time` 或 `recorded_date_and_confirmed_sequence`。后者基于用户核对的同日先后，不是精确时刻。`decision.buy_reason` 现在可省略或为 null，空白归为 null；不要用模拟理由补空白。理由缺失仅限制行为推断，不阻止事实复盘。
+
+截图接口新增 `details`（可空的 `stock_name/currency/gross_amount/fee/tax`）和 `derived_fields`。只有明确的税费前成交总额与价格或整数股数可用于自动补另一项；不使用余额、净出入金或税费倒推，不覆盖已有值。计算字段有来源标记，没有伪造的 OCR 自评分。费用只展示核对，当前盈亏仍不含费用。缺年份、无法解析的日期、无法辨认的关键成交字段仍需补充清晰记录。
 
 响应新增可空 `execution_summary`，由程序计算而非 LLM 生成：买卖次数、累计数量、买卖加权均价、剩余数量/成本/均价、已实现盈亏及收益率、逐笔 `timeline`。每条时间线包含原始明细、该方向的 `occurrence`（第几次买入或卖出）、操作后剩余股数及该笔卖出的已实现盈亏。盈亏基于移动加权平均成本，收益率分母为已售部分的成本；未卖出时为 null。数字保留至 8 位小数，不代表券商税务计算。分析摘要需结合逐笔理由和操作，分批本身不是行为问题。日 K 仅对应首次买入前，不能推广为各次成交的行情证据。整组持仓在画像中仍计作一个样本。
 
