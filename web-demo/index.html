@@ -60,9 +60,9 @@
       .upload-input:focus-visible + label { outline: 2px solid var(--teal); outline-offset: 2px; }
       .screenshot-queue { list-style: none; margin: 6px 0 0; padding: 0; max-height: 230px; overflow-y: auto; }
       .screenshot-queue li { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; align-items: center; }
-      input.screenshot-merge-check, #confirmSameTrade { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 0; accent-color: var(--teal); }
+      input.screenshot-merge-check, #confirmSameTrade, #activeOrderConfirmed { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 0; accent-color: var(--teal); }
       .merge-acknowledgement { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; margin: 12px 0; }
-      #confirmSameTrade { flex: 0 0 18px; margin-top: 2px; }
+      #confirmSameTrade, #activeOrderConfirmed { flex: 0 0 18px; margin-top: 2px; }
       .ocr-source { display: block; color: var(--muted); margin-top: 4px; font-size: 10px; overflow-wrap: anywhere; }
       #mergeControls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
       #mergeControls .button { height: auto; padding: 8px 12px; }
@@ -200,6 +200,7 @@
       .execution-editor th:first-child { min-width: 150px; max-width: 190px; white-space: normal; }
       .execution-editor input { min-width: 85px; width: 100%; font-size: 12px; }
       .execution-editor input[type="datetime-local"] { min-width: 205px; }
+      .execution-editor td .field-hint { display: block; white-space: normal; margin-top: 4px; }
       .execution-editor textarea { min-width: 160px; min-height: 76px; width: 100%; font-size: 12px; }
       .execution-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0; }
       .execution-metrics dt { color: #596763; font-size: 12px; }
@@ -270,7 +271,7 @@
               </section>
             </div>
             <div id="activeLedger" class="execution-ledger" hidden>
-              <label id="activeOrderLabel"><input id="activeOrderConfirmed" type="checkbox" /><span id="activeOrderText"></span></label>
+              <label id="activeOrderLabel" class="merge-acknowledgement"><input id="activeOrderConfirmed" type="checkbox" /><span id="activeOrderText"></span></label>
               <div id="activeExecutionEditor"></div><p id="activeExecutionError" class="inline-error" role="alert" hidden></p><div id="activeExecutionReport"></div>
               <button id="clearExecutions" type="button" class="button"></button>
             </div>
