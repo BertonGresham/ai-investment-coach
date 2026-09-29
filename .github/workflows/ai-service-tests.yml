@@ -1,11 +1,16 @@
 name: AI service tests
 
 on:
+  push:
+    branches: [dev]
   pull_request:
     paths:
       - "ai-service/**"
       - "web-demo/**"
       - ".github/workflows/ai-service-tests.yml"
+      - "docs/**"
+      - "README.md"
+      - "AGENTS.md"
   workflow_dispatch:
 
 permissions:
