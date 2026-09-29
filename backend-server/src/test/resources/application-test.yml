@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    url: ${TEST_DATABASE_URL:jdbc:h2:mem:coach;MODE=MySQL;DB_CLOSE_DELAY=-1}
+    username: ${TEST_DATABASE_USER:sa}
+    password: ${TEST_DATABASE_PASSWORD:}

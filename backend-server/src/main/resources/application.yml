@@ -1,4 +1,5 @@
 server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 8080
 
 spring:
@@ -7,11 +8,15 @@ spring:
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:ai_investment_coach}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${MYSQL_USER:coach}
-    password: ${MYSQL_PASSWORD:coach_password}
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
+    password: ${MYSQL_PASSWORD}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      accept-float-as-int: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -21,4 +26,6 @@ services:
   ai-service-url: ${AI_SERVICE_URL:http://localhost:8001}
   data-service-url: ${DATA_SERVICE_URL:http://localhost:8002}
 
+app:
+  cors-origins: ${BACKEND_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
 

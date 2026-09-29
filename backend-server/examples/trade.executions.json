@@ -1,0 +1,13 @@
+{
+  "stock": {"symbol": "AAPL", "market": "US"},
+  "trade": {
+    "executions": [
+      {"execution_id": "1", "side": "buy", "time": "2026-09-11T10:00:00-04:00", "price": 100, "quantity": 10},
+      {"execution_id": "2", "side": "sell", "time": "2026-09-14T10:00:00-04:00", "price": 120, "quantity": 5},
+      {"execution_id": "3", "side": "buy", "time": "2026-09-15T10:00:00-04:00", "price": 80, "quantity": 10, "reason": "Synthetic demonstration: revised plan"},
+      {"execution_id": "4", "side": "sell", "time": "2026-09-16T10:00:00-04:00", "price": 110, "quantity": 10}
+    ]
+  },
+  "decision": {},
+  "analysis_context": {"language": "zh-CN", "risk_notice_required": true}
+}
