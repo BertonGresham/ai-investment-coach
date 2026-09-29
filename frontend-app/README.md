@@ -15,5 +15,4 @@ npm install
 npm run start
 ```
 
-如果手机无法访问电脑上的`localhost`，请把`.env`里的服务地址改成电脑局域网IP。
-
+将`.env.example`复制为`.env`。电脑浏览器调试可使用`http://localhost:8001`；真机调试时，将`EXPO_PUBLIC_AI_SERVICE_URL`改为电脑的局域网IP，例如`http://192.168.1.20:8001`，并确保手机和电脑连接同一网络。

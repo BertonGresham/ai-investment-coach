@@ -1,5 +1,7 @@
 # GitHub协作规则
 
+首次参与先阅读 [组员开始指南](team-start.md)。统一从最新 `dev` 开始，不再从旧 `main` 或 AI 功能分支分头起步。
+
 ## 分支
 
 ```text
@@ -19,6 +21,8 @@ feature/data-service-jiho         Joo Jiho数据服务
 4. 推送到GitHub
 5. 创建Pull Request合并到`dev`
 6. 团队联调稳定后再合并到`main`
+
+已有个人分支先保存工作，再合入 `origin/dev` 的更新；不要为切换分支丢弃改动。GitHub 网页、GitHub Desktop 和开发工具的工作目录是三个不同入口：有权限不代表代码已经下载，下载后仍需在开发工具中打开对应目录。
 
 ## 提交信息格式
 

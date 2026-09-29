@@ -21,3 +21,4 @@ services:
   ai-service-url: ${AI_SERVICE_URL:http://localhost:8001}
   data-service-url: ${DATA_SERVICE_URL:http://localhost:8002}
 
+

@@ -1,0 +1,58 @@
+{
+  "source": {
+    "book": "Psychology of the Stock Market",
+    "author": "G. C. Selden",
+    "publication_year": 1912,
+    "source_url": "https://www.gutenberg.org/files/75570/75570-h/75570-h.htm",
+    "catalog_url": "https://www.gutenberg.org/ebooks/75570",
+    "rights_scope": "Public domain in the USA (catalog statement)",
+    "content_type": "team_paraphrase_not_quotation"
+  },
+  "cards": [
+    {
+      "id": "selden-1912-ch1-participation",
+      "chapter": "I. The Speculative Cycle",
+      "topics": ["fear_of_missing_out"],
+      "zh-CN": {
+        "title": "上涨后的参与冲动",
+        "content": "作者描述了观望者在持续上涨后改变判断、急于参与的过程。这是历史观察，不能据价格上涨认定某个人正在追涨。",
+        "reflection_question": "复盘问题（团队编写）：买入依据是事先写好的条件，还是担心继续上涨而错过？"
+      },
+      "ko-KR": {
+        "title": "상승 뒤 참여 충동",
+        "content": "저자는 상승이 지속되자 관망하던 사람이 판단을 바꾸어 참여를 서두르는 과정을 묘사합니다. 역사적 관찰이며 상승만으로 개인의 추격 매수를 단정할 수 없습니다.",
+        "reflection_question": "복기 질문(팀 작성): 매수 근거는 미리 정한 조건인가요, 더 오를 때 놓칠까 하는 걱정인가요?"
+      }
+    },
+    {
+      "id": "selden-1912-ch2-reasoning",
+      "chapter": "II. Inverted Reasoning and Its Consequences",
+      "topics": ["general"],
+      "zh-CN": {
+        "title": "不要让持仓替证据做决定",
+        "content": "作者提醒持仓可能左右人对事件的解释，应当保持开放，而不是把事实扭向有利于自己仓位的方向。",
+        "reflection_question": "复盘问题（团队编写）：如果没有持有这只股票，我会怎样解释同一条信息？"
+      },
+      "ko-KR": {
+        "title": "보유 포지션과 근거 구분",
+        "content": "저자는 보유 포지션이 사건 해석을 좌우할 수 있다고 경고하며, 사실을 자신의 포지션에 유리하게 해석하지 말고 열린 태도를 유지하라고 합니다.",
+        "reflection_question": "복기 질문(팀 작성): 이 종목을 보유하지 않았다면 같은 정보를 어떻게 해석했을까요?"
+      }
+    },
+    {
+      "id": "selden-1912-ch5-personal",
+      "chapter": "V. Confusing the Personal with the General",
+      "topics": ["general"],
+      "zh-CN": {
+        "title": "个人盈亏与市场事实分开",
+        "content": "作者区分个人利益与整体市场情况。自己的买入价和盈亏，会影响感受，但不能代替对外部事实的判断。",
+        "reflection_question": "复盘问题（团队编写）：卖出的条件是否事先确定，还是仅因自己的盈亏数字变化而改变？"
+      },
+      "ko-KR": {
+        "title": "개인 손익과 시장 사실 구분",
+        "content": "저자는 개인의 이해관계와 전체 시장 상황을 구분합니다. 자신의 매수가와 손익은 감정에 영향을 주지만 외부 사실에 대한 판단을 대신할 수 없습니다.",
+        "reflection_question": "복기 질문(팀 작성): 매도 조건은 미리 정했나요, 아니면 자신의 손익 숫자가 달라져 바꾸었나요?"
+      }
+    }
+  ]
+}

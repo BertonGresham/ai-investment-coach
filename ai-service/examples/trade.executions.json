@@ -1,0 +1,15 @@
+{
+  "user_id": "synthetic-demo",
+  "trade_id": "synthetic-scaled-position",
+  "stock": { "symbol": "AAPL", "market": "US" },
+  "trade": {
+    "executions": [
+      { "execution_id": "1", "side": "buy", "time": "2026-09-11T10:00:00-04:00", "price": 100, "quantity": 10, "reason": "Planned initial entry" },
+      { "execution_id": "2", "side": "sell", "time": "2026-09-14T10:00:00-04:00", "price": 120, "quantity": 5, "reason": "Predefined partial exit" },
+      { "execution_id": "3", "side": "buy", "time": "2026-09-15T10:00:00-04:00", "price": 80, "quantity": 10, "reason": "Added after a decline without a recorded prior condition" },
+      { "execution_id": "4", "side": "sell", "time": "2026-09-16T10:00:00-04:00", "price": 110, "quantity": 10, "reason": "Revised exit plan, retain 5 shares" }
+    ]
+  },
+  "decision": { "buy_reason": "Synthetic example: see each execution's recorded reason.", "sell_reason": null, "planned_holding_period": null },
+  "analysis_context": { "language": "zh-CN", "risk_notice_required": true }
+}

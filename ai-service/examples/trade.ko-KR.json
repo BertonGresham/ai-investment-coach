@@ -1,0 +1,21 @@
+{
+  "user_id": "demo-user",
+  "trade_id": "demo-trade-ko",
+  "stock": {"symbol": "005930", "market": "KR"},
+  "trade": {
+    "buy_time": "2026-09-24T10:00:00+09:00",
+    "sell_time": "2026-09-24T12:00:00+09:00",
+    "buy_price": 70000,
+    "sell_price": 69000,
+    "quantity": 2,
+    "profit_loss_amount": -2000,
+    "profit_loss_rate": -0.014286
+  },
+  "decision": {
+    "buy_reason": "기회를 놓칠까 걱정되어 추격 매수",
+    "sell_reason": "더 손실이 날까 두려워 매도"
+  },
+  "market_snapshot": {"kline_summary": "데모용 가상 요약: 상승 후 하락."},
+  "analysis_context": {"language": "ko-KR"},
+  "rag_context": []
+}

@@ -1,0 +1,21 @@
+{
+  "user_id": "demo-user",
+  "trade_id": "demo-trade-zh",
+  "stock": {"symbol": "AAPL", "market": "US"},
+  "trade": {
+    "buy_time": "2026-09-24T10:00:00+08:00",
+    "sell_time": "2026-09-24T12:00:00+08:00",
+    "buy_price": 100,
+    "sell_price": 98,
+    "quantity": 10,
+    "profit_loss_amount": -20,
+    "profit_loss_rate": -0.02
+  },
+  "decision": {
+    "buy_reason": "担心错过机会，看到上涨就买入",
+    "sell_reason": "害怕继续亏损，所以卖出"
+  },
+  "market_snapshot": {"kline_summary": "演示用虚构摘要：上涨后回落。"},
+  "analysis_context": {"language": "zh-CN"},
+  "rag_context": []
+}
