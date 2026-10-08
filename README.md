@@ -12,14 +12,14 @@ AI投资教练是一个分析投资者决策行为的AI coaching平台。
 2. 用户消耗积分参与模拟交易
 3. 用户提交买入/卖出记录和理由
 4. AI分析本次交易行为
-5. App展示行为问题、性格标签和复盘建议
+5. 网页展示行为问题、行为标签和复盘建议
 
 ## 仓库结构
 
 ```text
 ai-investment-coach/
-├── frontend-app/       # React Native Expo移动端
-├── web-demo/           # 无构建依赖的网页演示
+├── web-demo/           # 首版中韩双语网页、行情模拟与AI复盘演示
+├── frontend-app/       # 后续可扩展的React Native Expo移动端
 ├── backend-server/     # Spring Boot主业务后端
 ├── ai-service/         # FastAPI + LLM行为分析服务
 ├── data-service/       # FastAPI + pandas数据管道服务
@@ -49,7 +49,7 @@ ai-investment-coach/
 python -m http.server 5173 --directory web-demo
 ```
 
-浏览器打开 `http://localhost:5173`。网页无需安装 Node 依赖；支持中韩文、美股买入前日 K 自动背景与附来源的书籍笔记。自动行情需要启动下方 AI 服务；初始案例使用明确标记的合成数据。未启动 AI 服务时，取消自动行情可使用明确标注的本地规则模拟。
+浏览器打开 `http://localhost:5173`。网页无需安装 Node 依赖；首页提供中韩双语模拟交易、持仓和成交记录，行情及K线使用醒目标注的合成演示数据。Young 后端不可用时，成交保存在浏览器并明确标为本机演示；可从持仓或成交记录进入 AI 复盘子页面。AI 服务中的历史行情背景和书籍笔记仍由复盘页面按需使用。
 
 ### 1. AI服务
 

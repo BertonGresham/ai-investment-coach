@@ -11,7 +11,8 @@
 | backend-server | 8080 | 主业务后端 |
 | ai-service | 8001 | AI行为分析服务 |
 | data-service | 8002 | CSV、K线、资讯数据服务 |
-| frontend-app | Expo默认 | 移动端App |
+| web-demo | 5173 | 静态网页演示（`python -m http.server 5173 --directory web-demo`） |
+| frontend-app | Expo默认 | 后续移动端客户端，不属于首版交付目标 |
 
 ## 自动历史行情背景
 
