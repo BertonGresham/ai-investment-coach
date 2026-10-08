@@ -42,6 +42,7 @@ public class ExecutionRules {
         return ordered;
     }
     static String precision(String value) {
+        if(value.startsWith("0000-"))fail("Year zero is not a valid recorded trade date");
         if(!value.matches("\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})?)?"))fail("Use an ISO date or recorded timestamp");
         try {
             if(value.length()==10){LocalDate.parse(value);return "date";}

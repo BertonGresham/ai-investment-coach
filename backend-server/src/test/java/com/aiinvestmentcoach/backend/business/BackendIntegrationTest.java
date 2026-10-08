@@ -138,4 +138,28 @@ class BackendIntegrationTest {
         Account b=account();db.update("UPDATE auth_sessions SET expires_at=? WHERE user_id=?",java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(60)),b.id());
         mvc.perform(get("/api/me").header("Authorization","Bearer "+b.token())).andExpect(status().isUnauthorized());
     }
+    @Test void unsupportedYearDoesNotPersistAnUnanalyzableTrade() throws Exception {
+        Account a=account();ObjectNode body=payload();
+        ((ObjectNode)body.path("trade").path("executions").get(0)).put("time","0000-09-11");
+        mvc.perform(post("/api/trades").header("Authorization","Bearer "+a.token()).header("Idempotency-Key","invalid-year")
+            .contentType("application/json").content(body.toString())).andExpect(status().isUnprocessableEntity());
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM trade_records WHERE user_id=?",Integer.class,a.id()));
+    }
+    @Test void browserCorsAllowsOnlyConfiguredOrigins() throws Exception {
+        mvc.perform(options("/api/trades").header("Origin","http://127.0.0.1:5173")
+            .header("Access-Control-Request-Method","POST").header("Access-Control-Request-Headers","Authorization,Content-Type,Idempotency-Key"))
+            .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin","http://127.0.0.1:5173"));
+        mvc.perform(options("/api/trades").header("Origin","https://untrusted.example")
+            .header("Access-Control-Request-Method","POST")).andExpect(status().isForbidden());
+    }
+    @Test void historyPaginationAndRefreshUsePersistedRecords() throws Exception {
+        Account a=account();create(a,"page-first",payload());create(a,"page-second",payload());
+        String path="/api/trades";
+        var first=mvc.perform(get(path).param("offset","0").param("limit","1").header("Authorization","Bearer "+a.token()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andReturn().getResponse().getContentAsString();
+        var second=mvc.perform(get(path).param("offset","1").param("limit","1").header("Authorization","Bearer "+a.token()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andReturn().getResponse().getContentAsString();
+        assertNotEquals(JSON.readTree(first).get(0).path("trade_id"),JSON.readTree(second).get(0).path("trade_id"));
+        mvc.perform(get(path).param("offset","-1").header("Authorization","Bearer "+a.token())).andExpect(status().isBadRequest());
+    }
 }

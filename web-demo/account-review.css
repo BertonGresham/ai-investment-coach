@@ -1,0 +1,27 @@
+.account-band { border-block: 1px solid var(--line); padding: 12px 0; margin-bottom: 14px; }
+.home-link { color: var(--teal-dark); font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.top-actions { flex-wrap: wrap; }
+#paperHandoff { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+.account-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.account-mode { display: flex; align-items: center; gap: 8px; }
+.account-mode select { width: auto; max-width: 220px; }
+#accountIdentity { color: var(--muted); overflow-wrap: anywhere; flex: 1; min-width: 130px; }
+#accountSettings { margin-top: 10px; }
+#accountSettings summary { cursor: pointer; color: var(--teal-dark); font-weight: 700; }
+.account-form { margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; }
+.backend-field { max-width: 440px; margin-top: 12px; }
+.history-toolbar, .history-pagination { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 16px 0; flex-wrap: wrap; }
+.history-rows { list-style: none; margin: 0; padding: 0; }
+.history-row { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 1fr) minmax(120px, 1fr) 150px; gap: 16px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.history-row > * { min-width: 0; overflow-wrap: anywhere; }
+.history-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.history-row .button { white-space: normal; padding: 8px 12px; }
+.profile-source { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.profile-source select { max-width: 230px; }
+#singleOrderConfirmed { width: 18px; height: 18px; min-height: 18px; margin: 0; }
+@media (max-width: 680px) {
+  .history-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .account-form { grid-template-columns: minmax(0, 1fr); }
+  .nav-tabs { flex-wrap: wrap; }
+  .account-bar .button { margin-left: auto; }
+}
