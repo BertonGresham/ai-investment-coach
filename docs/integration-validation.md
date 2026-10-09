@@ -21,14 +21,15 @@
 - Web regression suite: 54 tests passed after the homepage routing integration. Inline review JavaScript and all new scripts pass syntax checks.
 - Browser smoke: synthetic buy 10 at 100, sell 5 at 120, homepage-to-review handoff, complete execution import and Mock analysis passed. Remaining quantity 5 and realized P&L 100 are preserved. Korean review at mobile width has no page-level horizontal overflow. This does not validate database persistence.
 - Backend H2 suite: 10 tests passed after compilation with ECJ against Maven-resolved dependencies.
-- Standard Windows Maven compilation was blocked by filesystem AccessDenied errors. The ECJ workaround does not establish that the normal Maven lifecycle passed.
-- MySQL 8.4 connected but schema initialization failed with an operating-system access-rights error in the isolated test data directory. MySQL persistence and browser login/save/reload are NOT yet verified.
-- `.github/workflows/backend-tests.yml` adds standard Java 17 Maven verification and a MySQL 8.4 test run. Remote results must be checked before merging.
+- Standard Windows Maven compilation was blocked by filesystem AccessDenied errors. The ECJ workaround alone did not establish that the normal Maven lifecycle passed.
+- GitHub Actions run [37815986083](https://github.com/BertonGresham/ai-investment-coach/actions/runs/37815986083) for commit b4a43da PASSED both the standard Java 17 Maven/H2 lifecycle and the MySQL 8.4 test suite.
+- AI/web workflow [37815985764](https://github.com/BertonGresham/ai-investment-coach/actions/runs/37815985764) also PASSED for that commit.
+- Local MySQL schema initialization was blocked by Windows data-directory access rights. Local browser login/save/reload/restart are NOT yet verified. The browser correctly reports the unavailable backend, without pretending login or persistence succeeded.
 - No live Claude calls or real brokerage records were used. Do not interpret mock tests as OCR accuracy or real-provider availability evidence.
 
 ## Remaining acceptance work
 
-1. Pass the normal Maven build and MySQL test suite in CI or an authorized development environment.
+1. Completed for b4a43da: normal Maven build and MySQL test suite in CI; recheck on later code changes.
 2. Start the backend and verify register/login, save, refresh, logout and cross-account history in a browser.
 3. Restart the backend and verify persisted trades/reports remain available.
 4. Verify screenshot extraction with the user's configured provider separately, with explicit consent for any real records.
