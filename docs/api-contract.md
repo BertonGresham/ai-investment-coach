@@ -227,7 +227,9 @@ ai-service 使用 ChromaDB 持久化向量，Embeddings 由 OPENAI_EMBEDDING_MOD
 
 ### 网页演示
 
-仓库根目录执行 `python -m http.server 5173 --directory web-demo`，打开 `http://localhost:5173`。网页无需 Node/npm 构建依赖；优先调用 AI 服务，服务不可用时显示明确标记的本地规则演示结果。AI 服务开发环境默认允许 `localhost:5173` 和 Expo Web 的 `localhost:8081`，可通过 `AI_SERVICE_CORS_ORIGINS` 调整。
+仓库根目录执行 `python -m http.server 5173 --bind 127.0.0.1 --directory web-demo`，打开 `http://127.0.0.1:5173`。根页面为中韩文模拟交易主页，`/review.html` 为 AI 复盘与账户历史。网页无需 Node/npm 构建依赖。首页行情为合成演示，成交只保存在本机，导入复盘并由登录用户提交后才进入数据库。
+
+复盘的“账户历史”模式使用业务后端保存交易和报告；服务失败会明确报错，不自动切换到本地结果或宣称保存成功。“临时演示”须显式选择，不保存到账户历史。Mock 是分析来源，与是否存入数据库是两回事。`api`、`backend` 查询参数分别指定 AI 与业务后端地址；非默认网页端口需要在 `AI_SERVICE_CORS_ORIGINS` 和 `BACKEND_CORS_ORIGINS` 中配置精确来源。开发 HTTP 服务不可直接暴露公网。
 
 ## CSV解析
 
@@ -263,9 +265,46 @@ file: broker_trades.csv
 }
 ```
 
-## 后端主业务接口草案
+## 后端主业务接口
+
+以下为集成分支的已实现契约，完整说明见 [Young 后端首轮联调](backend-young.md)。不得再使用旧版顶层 `symbol/side/price/quantity` 草案调用保存接口。
+
+### 提交逐笔成交
+
+先通过 `/api/auth/register` 或 `/api/auth/login` 获取凭证。用户归属来自登录身份，不由客户端自填 `user_id` 决定。
+
+```http
+POST /api/trades
+Content-Type: application/json
+Authorization: Bearer <access_token>
+Idempotency-Key: example-trade-001
+```
+
+```json
+{
+  "stock": {"symbol": "AAPL", "market": "US"},
+  "trade": {
+    "executions": [
+      {"execution_id": "buy-1", "side": "buy", "time": "2026-09-11T14:00:00Z", "price": 100, "quantity": 10, "reason": null},
+      {"execution_id": "sell-1", "side": "sell", "time": "2026-09-14T14:00:00Z", "price": 120, "quantity": 5, "reason": null}
+    ]
+  }
+}
+```
+
+这是合成数据，不是真实行情。成功返回交易对象及服务器生成的 `trade_id`。同一次提交重试复用幂等键；新交易生成新键。可选分析上下文字段及校验规则见上述后端文档。
+
+后续调用均带 Bearer 凭证：
+
+1. `POST /api/trades/{trade_id}/analysis`：分析已保存交易，保存唯一报告；失败时重试此接口，不重复新建交易。
+2. `GET /api/trades/{trade_id}/report`：读取报告，AI 输出在 `result` 字段中。
+3. `GET /api/trades?offset=0&limit=20` 与 `GET /api/reports?offset=0&limit=20`：当前用户历史。
+
+## 尚未实现的业务草案
 
 ### 完成学习任务
+
+以下仅用于讨论，尚不能作为可调用接口；最终身份鉴权和积分防重复领取规则需由后端负责人确认。
 
 ```http
 POST /api/learning/complete
@@ -275,23 +314,5 @@ POST /api/learning/complete
 {
   "user_id": "user_001",
   "lesson_id": "lesson_001"
-}
-```
-
-### 提交模拟交易
-
-```http
-POST /api/trades
-```
-
-```json
-{
-  "user_id": "user_001",
-  "symbol": "AAPL",
-  "side": "BUY",
-  "price": 218.5,
-  "quantity": 10,
-  "reason_code": "FOMO",
-  "reason_text": "看到价格快速上涨，担心错过机会"
 }
 ```
