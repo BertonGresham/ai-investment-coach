@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BackendIntegrationTest {
     static final ObjectMapper JSON=new ObjectMapper();
     static final AtomicInteger calls=new AtomicInteger();
+    static final AtomicInteger upgrades=new AtomicInteger();
     static volatile int aiStatus=200;
     static final HttpServer fakeAi=startAi();
     @Autowired MockMvc mvc;
@@ -32,12 +33,13 @@ class BackendIntegrationTest {
     @Autowired TradeService trades;
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry){registry.add("services.ai-service-url",()->"http://127.0.0.1:"+fakeAi.getAddress().getPort());}
     @AfterAll static void stop(){fakeAi.stop(0);}
-    @BeforeEach void reset(){aiStatus=200;calls.set(0);}
+    @BeforeEach void reset(){aiStatus=200;calls.set(0);upgrades.set(0);}
     static HttpServer startAi(){
         try {
             HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
-            server.createContext("/health",e->{byte[] b="{\"analysis_mode\":\"mock\"}".getBytes(StandardCharsets.UTF_8);e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});
+            server.createContext("/health",e->{if(e.getRequestHeaders().getFirst("Upgrade")!=null)upgrades.incrementAndGet();byte[] b="{\"analysis_mode\":\"mock\"}".getBytes(StandardCharsets.UTF_8);e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});
             server.createContext("/analyze-trade",e->{
+                if(e.getRequestHeaders().getFirst("Upgrade")!=null)upgrades.incrementAndGet();
                 calls.incrementAndGet();JsonNode request=JSON.readTree(e.getRequestBody());
                 ObjectNode result=JSON.createObjectNode();
                 result.put("trade_id",request.path("trade_id").asText());result.put("trade_time","2026-09-11T10:00:00-04:00");
@@ -49,6 +51,13 @@ class BackendIntegrationTest {
         }catch(Exception e){throw new IllegalStateException(e);}
     }
     record Account(String token,String id,String email) {}
+    @Test void aiTransportDoesNotRequestCleartextHttp2Upgrades() throws Exception {
+        Account user=account();
+        String id=create(user,UUID.randomUUID().toString(),payload());
+        trades.analyze(user.id(),id);
+        assertEquals(1,calls.get());
+        assertEquals(0,upgrades.get(),"Both health and analysis requests must use HTTP/1.1 without Upgrade headers");
+    }
     Account account() throws Exception {
         String email=UUID.randomUUID()+"@example.com";
         var result=mvc.perform(post("/api/auth/register").contentType("application/json")

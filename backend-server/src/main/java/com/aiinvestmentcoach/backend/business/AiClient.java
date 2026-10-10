@@ -12,7 +12,9 @@ import static org.springframework.http.HttpStatus.*;
 @Component
 public class AiClient {
     public record Analysis(JsonNode result,String mode) {}
-    private final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    // Uvicorn's HTTP/1.1 transport does not support Java's cleartext h2c upgrades.
+    private final HttpClient http=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(Duration.ofSeconds(3)).build();
     private final String base;
     private final ObjectMapper json;
     public AiClient(@Value("${services.ai-service-url}") String base,ObjectMapper json){this.base=base.replaceAll("/$","");this.json=json;}
